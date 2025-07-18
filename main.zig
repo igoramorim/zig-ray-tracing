@@ -1,25 +1,61 @@
 const std = @import("std");
+const debug = std.debug;
 
 pub fn main() !void {
-    const width = 256;
-    const height = 256;
+    const aspectRadio: f64 = 16.0 / 9.0;
+    const imageWidth: i64 = 400;
+
+    // calculate the image height and ensure that it is at least 1
+    var imageHeight: i64 = imageWidth / aspectRadio;
+    if (imageHeight < 1) {
+        imageHeight = 1;
+    }
+
+    // camera
+    const focalLength: f64 = 1.0;
+    const viewportHeight: f64 = 2.0;
+    const viewportWidth: f64 = viewportHeight * (@as(f64, @floatFromInt(imageWidth)) / @as(f64, @floatFromInt(imageHeight)));
+    const cameraCenter = Point3{};
+    debug.print("viewport width: {any}\n", .{viewportWidth});
+
+    // calculate the vectors across the horizontal and down the vertical viewport edges
+    const viewportU = Vec3{ .x = viewportWidth };
+    const viewportV = Vec3{ .y = -viewportHeight };
+    debug.print("viewport U: {any}\n", .{viewportU});
+    debug.print("viewport V: {any}\n", .{viewportV});
+
+    // calculate the horizontal and vertical delta vectors from pixel to pixel
+    const pixelDeltaU = viewportU.DivI64(imageWidth);
+    const pixelDeltaV = viewportV.DivI64(imageHeight);
+    debug.print("pixel delta U: {any}\n", .{pixelDeltaU});
+    debug.print("pixel delta V: {any}\n", .{pixelDeltaV});
+
+    // calculate the location of the upper left pixel
+    const viewportUpperLeft = cameraCenter.Sub(Vec3{ .z = focalLength }).Sub(viewportU.DivI64(2)).Sub(viewportV.DivI64(2));
+    const pixel00Loc = pixelDeltaU.Add(pixelDeltaV).MultF64(0.5).Add(viewportUpperLeft);
+    debug.print("viewport upper left: {any}\n", .{viewportUpperLeft});
+    debug.print("pixel 00 loc: {any}\n", .{pixel00Loc});
 
     const stdout = std.io.getStdOut().writer();
-    const debug = std.debug;
 
-    try stdout.print("P3\n{d} {d}\n255\n", .{ width, height });
+    try stdout.print("P3\n{d} {d}\n255\n", .{ imageWidth, imageHeight });
 
-    for (0..height) |j| {
-        debug.print("scan lines remaining: {d}\n", .{(height - j)});
+    var j: i64 = 0;
+    while (j < imageHeight) : (j = j + 1) {
+        debug.print("scan lines remaining: {d}\n", .{(imageHeight - j)});
 
-        for (0..width) |i| {
-            const r: f64 = @as(f64, @floatFromInt(i)) / (width - 1);
-            const g: f64 = @as(f64, @floatFromInt(j)) / (height - 1);
-            const b: f64 = 0.0;
+        var i: i64 = 0;
+        while (i < imageWidth) : (i = i + 1) {
+            const pixelCenter = pixel00Loc.Add(pixelDeltaU.MultI64(i)).Add(pixelDeltaV.MultI64(j));
+            const rayDirection = pixelCenter.Sub(cameraCenter);
+            const ray = Ray{ .orig = cameraCenter, .dir = rayDirection };
+            // debug.print("pixel center: {any}\n", .{pixelCenter});
+            // debug.print("camera center: {any}\nray direction: {any}\n", .{ cameraCenter, rayDirection });
 
-            // const pixelColor = Vec3{ .x = r, .y = g, .z = b };
-            const pixelColor = Color{ .e = [3]f64{ r, g, b } };
+            const pixelColor = rayColor(ray);
+            // debug.print("pixel color: {any}\n", .{pixelColor});
             try writeColor(pixelColor);
+            // debug.print("\n", .{});
         }
     }
 
@@ -27,24 +63,86 @@ pub fn main() !void {
 }
 
 const Vec3 = struct {
-    e: [3]f64 = [3]f64{ 0.0, 0.0, 0.0 },
-    // x: f64 = 0.0,
-    // y: f64 = 0.0,
-    // z: f64 = 0.0,
+    x: f64 = 0.0,
+    y: f64 = 0.0,
+    z: f64 = 0.0,
 
     pub fn X(self: Vec3) f64 {
-        return self.e[0];
-        // return self.x;
+        return self.x;
     }
 
     pub fn Y(self: Vec3) f64 {
-        return self.e[1];
-        // return self.y;
+        return self.y;
     }
 
     pub fn Z(self: Vec3) f64 {
-        return self.e[2];
-        // return self.z;
+        return self.z;
+    }
+
+    pub fn Length(self: Vec3) f64 {
+        return std.math.sqrt(self.LengthSquared());
+    }
+
+    pub fn LengthSquared(self: Vec3) f64 {
+        return (self.x * self.x) + (self.y * self.y) + (self.z * self.z);
+    }
+
+    pub fn DivI64(self: Vec3, i: i64) Vec3 {
+        const value: f64 = 1 / @as(f64, @floatFromInt(i));
+        return self.MultF64(value);
+    }
+
+    pub fn DivF64(self: Vec3, f: f64) Vec3 {
+        const value: f64 = 1 / f;
+        return self.MultF64(value);
+    }
+
+    pub fn Mult(self: Vec3, v: Vec3) Vec3 {
+        return Vec3{
+            .x = self.x * v.x,
+            .y = self.y * v.y,
+            .z = self.z * v.z,
+        };
+    }
+
+    pub fn MultI64(self: Vec3, i: i64) Vec3 {
+        return Vec3{
+            .x = self.x * @as(f64, @floatFromInt(i)),
+            .y = self.y * @as(f64, @floatFromInt(i)),
+            .z = self.z * @as(f64, @floatFromInt(i)),
+        };
+    }
+
+    pub fn MultF64(self: Vec3, f: f64) Vec3 {
+        return Vec3{
+            .x = f * self.x,
+            .y = f * self.y,
+            .z = f * self.z,
+        };
+    }
+
+    pub fn Sub(self: Vec3, v: Vec3) Vec3 {
+        return Vec3{
+            .x = self.x - v.x,
+            .y = self.y - v.y,
+            .z = self.z - v.z,
+        };
+    }
+
+    pub fn Add(self: Vec3, v: Vec3) Vec3 {
+        return Vec3{
+            .x = self.x + v.x,
+            .y = self.y + v.y,
+            .z = self.z + v.z,
+        };
+    }
+
+    pub fn AddF64(self: Vec3, f: f64) Vec3 {
+        return Vec3{
+            .x = self.x + f,
+            .y = self.y + f,
+            .z = self.z + f,
+        };
     }
 };
 
@@ -65,6 +163,20 @@ fn writeColor(pixelColor: Color) !void {
 
     const stdout = std.io.getStdOut().writer();
     try stdout.print("{d} {d} {d}\n", .{ rbyte, gbyte, bbyte });
+}
+
+fn rayColor(r: Ray) Color {
+    const unitDirection = unitVector(r.Direction());
+    const a: f64 = 0.5 * (unitDirection.Y() + 1.0);
+
+    const white = Color{ .x = 1.0, .y = 1.0, .z = 1.0 };
+    const blue = Color{ .x = 0.5, .y = 0.7, .z = 1.0 };
+
+    return white.MultF64(1.0 - a).Add(blue.MultF64(a));
+}
+
+fn unitVector(v: Vec3) Vec3 {
+    return v.DivF64(v.Length());
 }
 
 const Ray = struct {
