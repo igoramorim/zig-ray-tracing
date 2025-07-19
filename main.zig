@@ -166,8 +166,16 @@ fn writeColor(pixelColor: Color) !void {
 }
 
 fn rayColor(r: Ray) Color {
-    if (hitSphere(Vec3{ .z = -1.0 }, 0.5, r)) {
-        return Vec3{ .x = 1.0 };
+    const t: f64 = hitSphere(Vec3{ .z = -1.0 }, 0.5, r);
+    if (t > 0.0) {
+        const normal: Vec3 = unitVector(r.At(t).Sub(Point3{ .z = -1.0 }));
+        // remap range [-1 1] to [0 1] and map it to RGB
+        const color = Color{
+            .x = normal.X() + 1,
+            .y = normal.Y() + 1,
+            .z = normal.Z() + 1,
+        };
+        return color.MultF64(0.5);
     }
 
     const unitDirection = unitVector(r.Direction());
@@ -179,13 +187,18 @@ fn rayColor(r: Ray) Color {
     return white.MultF64(1.0 - a).Add(blue.MultF64(a));
 }
 
-fn hitSphere(center: Vec3, radius: f64, ray: Ray) bool {
+fn hitSphere(center: Vec3, radius: f64, ray: Ray) f64 {
     const oc: Vec3 = center.Sub(ray.Origin());
-    const a: f64 = dot(ray.Direction(), ray.Direction());
-    const b: f64 = -2.0 * dot(ray.Direction(), oc);
-    const c: f64 = dot(oc, oc) - (radius * radius);
-    const discriminant: f64 = (b * b) - (4 * a * c);
-    return discriminant >= 0;
+    const a: f64 = ray.Direction().LengthSquared();
+    const h: f64 = dot(ray.Direction(), oc);
+    const c: f64 = oc.LengthSquared() - (radius * radius);
+    const discriminant: f64 = (h * h) - (a * c);
+
+    if (discriminant < 0.0) {
+        return -1.0;
+    }
+
+    return (h - std.math.sqrt(discriminant)) / a;
 }
 
 fn dot(u: Vec3, v: Vec3) f64 {
@@ -211,6 +224,6 @@ const Ray = struct {
     }
 
     pub fn At(self: Ray, t: f64) Point3 {
-        return self.orig + (t * self.dir); // NOTE: self.dir.Mult(t) ?
+        return self.dir.MultF64(t).Add(self.orig);
     }
 };
