@@ -166,6 +166,10 @@ fn writeColor(pixelColor: Color) !void {
 }
 
 fn rayColor(r: Ray) Color {
+    if (hitSphere(Vec3{ .z = -1.0 }, 0.5, r)) {
+        return Vec3{ .x = 1.0 };
+    }
+
     const unitDirection = unitVector(r.Direction());
     const a: f64 = 0.5 * (unitDirection.Y() + 1.0);
 
@@ -173,6 +177,21 @@ fn rayColor(r: Ray) Color {
     const blue = Color{ .x = 0.5, .y = 0.7, .z = 1.0 };
 
     return white.MultF64(1.0 - a).Add(blue.MultF64(a));
+}
+
+fn hitSphere(center: Vec3, radius: f64, ray: Ray) bool {
+    const oc: Vec3 = center.Sub(ray.Origin());
+    const a: f64 = dot(ray.Direction(), ray.Direction());
+    const b: f64 = -2.0 * dot(ray.Direction(), oc);
+    const c: f64 = dot(oc, oc) - (radius * radius);
+    const discriminant: f64 = (b * b) - (4 * a * c);
+    return discriminant >= 0;
+}
+
+fn dot(u: Vec3, v: Vec3) f64 {
+    return u.X() * v.X() +
+        u.Y() * v.Y() +
+        u.Z() * v.Z();
 }
 
 fn unitVector(v: Vec3) Vec3 {
