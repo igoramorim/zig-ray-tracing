@@ -11,6 +11,11 @@ pub fn main() !void {
         imageHeight = 1;
     }
 
+    // world
+    var world = HittableList.Init();
+    try world.Add(Sphere.Init(Vec3{ .x = 0.0, .y = 0.0, .z = -1.0 }, 0.5));
+    try world.Add(Sphere.Init(Vec3{ .x = 0.0, .y = -100.5, .z = -1.0 }, 100.0));
+
     // camera
     const focalLength: f64 = 1.0;
     const viewportHeight: f64 = 2.0;
@@ -52,7 +57,7 @@ pub fn main() !void {
             // debug.print("pixel center: {any}\n", .{pixelCenter});
             // debug.print("camera center: {any}\nray direction: {any}\n", .{ cameraCenter, rayDirection });
 
-            const pixelColor = rayColor(ray);
+            const pixelColor = rayColor(ray, world);
             // debug.print("pixel color: {any}\n", .{pixelColor});
             try writeColor(pixelColor);
             // debug.print("\n", .{});
@@ -144,6 +149,14 @@ const Vec3 = struct {
             .z = self.z + f,
         };
     }
+
+    pub fn Reverse(self: Vec3) Vec3 {
+        return Vec3{
+            .x = -self.x,
+            .y = -self.y,
+            .z = -self.z,
+        };
+    }
 };
 
 const Point3 = Vec3;
@@ -165,17 +178,10 @@ fn writeColor(pixelColor: Color) !void {
     try stdout.print("{d} {d} {d}\n", .{ rbyte, gbyte, bbyte });
 }
 
-fn rayColor(r: Ray) Color {
-    const t: f64 = hitSphere(Vec3{ .z = -1.0 }, 0.5, r);
-    if (t > 0.0) {
-        const normal: Vec3 = unitVector(r.At(t).Sub(Point3{ .z = -1.0 }));
-        // remap range [-1 1] to [0 1] and map it to RGB
-        const color = Color{
-            .x = normal.X() + 1,
-            .y = normal.Y() + 1,
-            .z = normal.Z() + 1,
-        };
-        return color.MultF64(0.5);
+fn rayColor(r: Ray, world: HittableList) Color {
+    var rec = HitRecord{};
+    if (world.Hit(r, 0.0, infinity, &rec)) {
+        return rec.Normal().Add(Color{ .x = 1.0, .y = 1.0, .z = 1.0 }).MultF64(0.5);
     }
 
     const unitDirection = unitVector(r.Direction());
@@ -227,3 +233,110 @@ const Ray = struct {
         return self.dir.MultF64(t).Add(self.orig);
     }
 };
+
+const HitRecord = struct {
+    p: Point3 = Point3{},
+    normal: Vec3 = Vec3{},
+    t: f64 = undefined,
+    frontFace: bool = undefined,
+
+    pub fn SetFaceNormal(self: *HitRecord, ray: Ray, outwardNormal: Vec3) void {
+        // sets the hit record normal vector
+        // NOTE: the parameter 'outwardNormal' is assumed to have unit length
+
+        self.frontFace = dot(ray.Direction(), outwardNormal) < 0.0;
+        if (self.frontFace) {
+            self.normal = outwardNormal;
+        } else {
+            self.normal = outwardNormal.Reverse();
+        }
+    }
+
+    pub fn Normal(self: HitRecord) Vec3 {
+        return self.normal;
+    }
+};
+
+const Sphere = struct {
+    center: Point3,
+    radius: f64,
+
+    pub fn Init(center: Point3, radius: f64) Sphere {
+        return Sphere{ .center = center, .radius = @max(0.0, radius) };
+    }
+
+    pub fn Hit(self: Sphere, ray: Ray, rayTMin: f64, rayTMax: f64, rec: *HitRecord) bool {
+        const oc: Vec3 = self.center.Sub(ray.Origin());
+        const a: f64 = ray.Direction().LengthSquared();
+        const h: f64 = dot(ray.Direction(), oc);
+        const c: f64 = oc.LengthSquared() - (self.radius * self.radius);
+
+        const discriminant: f64 = (h * h) - (a * c);
+        if (discriminant < 0.0) {
+            return false;
+        }
+
+        const sqrtd: f64 = std.math.sqrt(discriminant);
+
+        // find the nearest root tha lies in the acceptable range
+        var root: f64 = (h - sqrtd) / a;
+        // var root: f64 = 1.0;
+        if (root <= rayTMin or rayTMax <= root) {
+            root = (h + sqrtd) / a;
+            if (root <= rayTMin or rayTMax <= root) {
+                return false;
+            }
+        }
+
+        rec.t = root;
+        rec.p = ray.At(rec.t);
+        const outwardNormal: Vec3 = rec.p.Sub(self.center).DivF64(self.radius);
+        rec.SetFaceNormal(ray, outwardNormal);
+
+        return true;
+    }
+};
+
+const HittableList = struct {
+    objects: std.ArrayList(Sphere),
+
+    pub fn Init() HittableList {
+        // TODO: Not sure about the allocator type
+        return HittableList{ .objects = std.ArrayList(Sphere).init(std.heap.page_allocator) };
+    }
+
+    pub fn Clear(self: *HittableList) void {
+        // TODO: Check if this is the way
+        self.objects.deinit();
+    }
+
+    pub fn Add(self: *HittableList, obj: Sphere) !void {
+        try self.objects.append(obj);
+    }
+
+    pub fn Hit(self: HittableList, ray: Ray, rayTmin: f64, rayTMax: f64, rec: *HitRecord) bool {
+        var tempRec = HitRecord{};
+        var hitAnything = false;
+        var closestSoFar = rayTMax;
+
+        // @compileLog(@TypeOf(rec));
+        // @compileLog(@TypeOf(tempRec));
+
+        for (self.objects.items) |obj| {
+            if (obj.Hit(ray, rayTmin, closestSoFar, &tempRec)) {
+                hitAnything = true;
+                closestSoFar = tempRec.t;
+                rec.* = tempRec;
+            }
+        }
+
+        return hitAnything;
+    }
+};
+
+const infinity: f64 = std.math.floatMax(f64);
+const pi: f64 = 3.1415926535897932385;
+
+fn degToRad(degrees: f64) f64 {
+    return (degrees * pi) / 180.0;
+}
