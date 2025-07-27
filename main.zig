@@ -1,70 +1,19 @@
 const std = @import("std");
+const stdout = std.io.getStdOut().writer();
 const debug = std.debug;
 
 pub fn main() !void {
-    const aspectRadio: f64 = 16.0 / 9.0;
-    const imageWidth: i64 = 400;
-
-    // calculate the image height and ensure that it is at least 1
-    var imageHeight: i64 = imageWidth / aspectRadio;
-    if (imageHeight < 1) {
-        imageHeight = 1;
-    }
-
     // world
     var world = HittableList.Init();
     try world.Add(Sphere.Init(Vec3{ .x = 0.0, .y = 0.0, .z = -1.0 }, 0.5));
     try world.Add(Sphere.Init(Vec3{ .x = 0.0, .y = -100.5, .z = -1.0 }, 100.0));
 
     // camera
-    const focalLength: f64 = 1.0;
-    const viewportHeight: f64 = 2.0;
-    const viewportWidth: f64 = viewportHeight * (@as(f64, @floatFromInt(imageWidth)) / @as(f64, @floatFromInt(imageHeight)));
-    const cameraCenter = Point3{};
-    debug.print("viewport width: {any}\n", .{viewportWidth});
+    var cam = Camera{};
+    cam.aspectRadio = 16.0 / 9.0;
+    cam.imageWidth = 400;
 
-    // calculate the vectors across the horizontal and down the vertical viewport edges
-    const viewportU = Vec3{ .x = viewportWidth };
-    const viewportV = Vec3{ .y = -viewportHeight };
-    debug.print("viewport U: {any}\n", .{viewportU});
-    debug.print("viewport V: {any}\n", .{viewportV});
-
-    // calculate the horizontal and vertical delta vectors from pixel to pixel
-    const pixelDeltaU = viewportU.DivI64(imageWidth);
-    const pixelDeltaV = viewportV.DivI64(imageHeight);
-    debug.print("pixel delta U: {any}\n", .{pixelDeltaU});
-    debug.print("pixel delta V: {any}\n", .{pixelDeltaV});
-
-    // calculate the location of the upper left pixel
-    const viewportUpperLeft = cameraCenter.Sub(Vec3{ .z = focalLength }).Sub(viewportU.DivI64(2)).Sub(viewportV.DivI64(2));
-    const pixel00Loc = pixelDeltaU.Add(pixelDeltaV).MultF64(0.5).Add(viewportUpperLeft);
-    debug.print("viewport upper left: {any}\n", .{viewportUpperLeft});
-    debug.print("pixel 00 loc: {any}\n", .{pixel00Loc});
-
-    const stdout = std.io.getStdOut().writer();
-
-    try stdout.print("P3\n{d} {d}\n255\n", .{ imageWidth, imageHeight });
-
-    var j: i64 = 0;
-    while (j < imageHeight) : (j = j + 1) {
-        debug.print("scan lines remaining: {d}\n", .{(imageHeight - j)});
-
-        var i: i64 = 0;
-        while (i < imageWidth) : (i = i + 1) {
-            const pixelCenter = pixel00Loc.Add(pixelDeltaU.MultI64(i)).Add(pixelDeltaV.MultI64(j));
-            const rayDirection = pixelCenter.Sub(cameraCenter);
-            const ray = Ray{ .orig = cameraCenter, .dir = rayDirection };
-            // debug.print("pixel center: {any}\n", .{pixelCenter});
-            // debug.print("camera center: {any}\nray direction: {any}\n", .{ cameraCenter, rayDirection });
-
-            const pixelColor = rayColor(ray, world);
-            // debug.print("pixel color: {any}\n", .{pixelColor});
-            try writeColor(pixelColor);
-            // debug.print("\n", .{});
-        }
-    }
-
-    debug.print("done!\n", .{});
+    try cam.Render(world);
 }
 
 const Vec3 = struct {
@@ -174,23 +123,7 @@ fn writeColor(pixelColor: Color) !void {
     const gbyte: i64 = @as(i64, @intFromFloat(255.999 * g));
     const bbyte: i64 = @as(i64, @intFromFloat(255.999 * b));
 
-    const stdout = std.io.getStdOut().writer();
     try stdout.print("{d} {d} {d}\n", .{ rbyte, gbyte, bbyte });
-}
-
-fn rayColor(r: Ray, world: HittableList) Color {
-    var rec = HitRecord{};
-    if (world.Hit(r, 0.0, infinity, &rec)) {
-        return rec.Normal().Add(Color{ .x = 1.0, .y = 1.0, .z = 1.0 }).MultF64(0.5);
-    }
-
-    const unitDirection = unitVector(r.Direction());
-    const a: f64 = 0.5 * (unitDirection.Y() + 1.0);
-
-    const white = Color{ .x = 1.0, .y = 1.0, .z = 1.0 };
-    const blue = Color{ .x = 0.5, .y = 0.7, .z = 1.0 };
-
-    return white.MultF64(1.0 - a).Add(blue.MultF64(a));
 }
 
 fn hitSphere(center: Vec3, radius: f64, ray: Ray) f64 {
@@ -216,6 +149,84 @@ fn dot(u: Vec3, v: Vec3) f64 {
 fn unitVector(v: Vec3) Vec3 {
     return v.DivF64(v.Length());
 }
+
+const Camera = struct {
+    aspectRadio: f64 = 1.0, // ratio of image width over height
+    imageWidth: i64 = 100, // rendered image width in pixel count
+    imageHeight: i64 = undefined, // rendered image height
+    cameraCenter: Point3 = Point3{}, // camera center
+    pixel00Loc: Point3 = Point3{}, // location of pixel 0,0
+    pixelDeltaU: Vec3 = Vec3{}, // offset to pixel to the right
+    pixelDeltaV: Vec3 = Vec3{}, // off to pixel below
+
+    pub fn Render(self: *Camera, world: HittableList) !void {
+        self.Initialize();
+
+        try stdout.print("P3\n{d} {d}\n255\n", .{ self.imageWidth, self.imageHeight });
+
+        var j: i64 = 0;
+        while (j < self.imageHeight) : (j = j + 1) {
+            debug.print("scan lines remaining: {d}\n", .{(self.imageHeight - j)});
+
+            var i: i64 = 0;
+            while (i < self.imageWidth) : (i = i + 1) {
+                const pixelCenter = self.pixel00Loc.Add(self.pixelDeltaU.MultI64(i)).Add(self.pixelDeltaV.MultI64(j));
+                const rayDirection = pixelCenter.Sub(self.cameraCenter);
+                const ray = Ray{ .orig = self.cameraCenter, .dir = rayDirection };
+                // debug.print("pixel center: {any}\n", .{pixelCenter});
+                // debug.print("camera center: {any}\nray direction: {any}\n", .{ cameraCenter, rayDirection });
+
+                const pixelColor = self.rayColor(ray, world);
+                // debug.print("pixel color: {any}\n", .{pixelColor});
+                try writeColor(pixelColor);
+                // debug.print("\n", .{});
+            }
+        }
+
+        debug.print("done!\n", .{});
+    }
+
+    fn Initialize(self: *Camera) void {
+        const heightf: f64 = @as(f64, @floatFromInt(self.imageWidth)) / self.aspectRadio;
+        self.imageHeight = @as(i64, @intFromFloat(heightf));
+        if (self.imageHeight < 1) {
+            self.imageHeight = 1;
+        }
+        debug.print("width: {any} aspect radio: {any} height: {any}\n", .{ self.imageWidth, self.aspectRadio, self.imageHeight });
+
+        // determine viewport dimensions
+        const focalLength: f64 = 1.0;
+        const viewportHeight: f64 = 2.0;
+        const viewportWidth: f64 = viewportHeight * (@as(f64, @floatFromInt(self.imageWidth)) / @as(f64, @floatFromInt(self.imageHeight)));
+
+        // calculate the vectors across the horizontal and down the vertical viewport edges
+        const viewportU = Vec3{ .x = viewportWidth };
+        const viewportV = Vec3{ .y = -viewportHeight };
+
+        // calculate the horizontal and vertical delta vectors from pixel to pixel
+        self.pixelDeltaU = viewportU.DivI64(self.imageWidth);
+        self.pixelDeltaV = viewportV.DivI64(self.imageHeight);
+
+        // calculate the location of the upper left pixel
+        const viewportUpperLeft = self.cameraCenter.Sub(Vec3{ .z = focalLength }).Sub(viewportU.DivI64(2)).Sub(viewportV.DivI64(2));
+        self.pixel00Loc = self.pixelDeltaU.Add(self.pixelDeltaV).MultF64(0.5).Add(viewportUpperLeft);
+    }
+
+    fn rayColor(_: Camera, ray: Ray, world: HittableList) Color {
+        var rec = HitRecord{};
+        if (world.Hit(ray, Interval.Init(0, infinity), &rec)) {
+            return rec.Normal().Add(Color{ .x = 1.0, .y = 1.0, .z = 1.0 }).MultF64(0.5);
+        }
+
+        const unitDirection = unitVector(ray.Direction());
+        const a: f64 = 0.5 * (unitDirection.Y() + 1.0);
+
+        const white = Color{ .x = 1.0, .y = 1.0, .z = 1.0 };
+        const blue = Color{ .x = 0.5, .y = 0.7, .z = 1.0 };
+
+        return white.MultF64(1.0 - a).Add(blue.MultF64(a));
+    }
+};
 
 const Ray = struct {
     orig: Point3,
@@ -265,7 +276,7 @@ const Sphere = struct {
         return Sphere{ .center = center, .radius = @max(0.0, radius) };
     }
 
-    pub fn Hit(self: Sphere, ray: Ray, rayTMin: f64, rayTMax: f64, rec: *HitRecord) bool {
+    pub fn Hit(self: Sphere, ray: Ray, rayT: Interval, rec: *HitRecord) bool {
         const oc: Vec3 = self.center.Sub(ray.Origin());
         const a: f64 = ray.Direction().LengthSquared();
         const h: f64 = dot(ray.Direction(), oc);
@@ -280,10 +291,9 @@ const Sphere = struct {
 
         // find the nearest root tha lies in the acceptable range
         var root: f64 = (h - sqrtd) / a;
-        // var root: f64 = 1.0;
-        if (root <= rayTMin or rayTMax <= root) {
+        if (!rayT.Surrounds(root)) {
             root = (h + sqrtd) / a;
-            if (root <= rayTMin or rayTMax <= root) {
+            if (!rayT.Surrounds(root)) {
                 return false;
             }
         }
@@ -314,16 +324,16 @@ const HittableList = struct {
         try self.objects.append(obj);
     }
 
-    pub fn Hit(self: HittableList, ray: Ray, rayTmin: f64, rayTMax: f64, rec: *HitRecord) bool {
+    pub fn Hit(self: HittableList, ray: Ray, rayT: Interval, rec: *HitRecord) bool {
         var tempRec = HitRecord{};
         var hitAnything = false;
-        var closestSoFar = rayTMax;
+        var closestSoFar = rayT.max;
 
         // @compileLog(@TypeOf(rec));
         // @compileLog(@TypeOf(tempRec));
 
         for (self.objects.items) |obj| {
-            if (obj.Hit(ray, rayTmin, closestSoFar, &tempRec)) {
+            if (obj.Hit(ray, Interval.Init(rayT.min, closestSoFar), &tempRec)) {
                 hitAnything = true;
                 closestSoFar = tempRec.t;
                 rec.* = tempRec;
@@ -333,6 +343,30 @@ const HittableList = struct {
         return hitAnything;
     }
 };
+
+const Interval = struct {
+    min: f64 = infinity,
+    max: f64 = -infinity,
+
+    pub fn Init(min: f64, max: f64) Interval {
+        return Interval{ .min = min, .max = max };
+    }
+
+    pub fn Size(self: Interval) f64 {
+        return self.max - self.min;
+    }
+
+    pub fn Contains(self: Interval, x: f64) bool {
+        return self.min <= x and x <= self.max;
+    }
+
+    pub fn Surrounds(self: Interval, x: f64) bool {
+        return self.min < x and x < self.max;
+    }
+};
+
+const empty: Interval = Interval.Init(infinity, -infinity);
+const universe: Interval = Interval.Init(-infinity, infinity);
 
 const infinity: f64 = std.math.floatMax(f64);
 const pi: f64 = 3.1415926535897932385;
