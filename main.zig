@@ -5,6 +5,7 @@ const debug = std.debug;
 pub fn main() !void {
     // world
     var world = HittableList.Init();
+    defer world.Clear();
     try world.Add(Sphere.Init(Vec3{ .x = 0.0, .y = 0.0, .z = -1.0 }, 0.5));
     try world.Add(Sphere.Init(Vec3{ .x = 0.0, .y = -100.5, .z = -1.0 }, 100.0));
 
@@ -12,6 +13,7 @@ pub fn main() !void {
     var cam = Camera{};
     cam.aspectRadio = 16.0 / 9.0;
     cam.imageWidth = 400;
+    cam.samplesPerPixel = 100;
 
     try cam.Render(world);
 }
@@ -119,9 +121,10 @@ fn writeColor(pixelColor: Color) !void {
     const b: f64 = pixelColor.Z();
 
     // values in range 0 to 255
-    const rbyte: i64 = @as(i64, @intFromFloat(255.999 * r));
-    const gbyte: i64 = @as(i64, @intFromFloat(255.999 * g));
-    const bbyte: i64 = @as(i64, @intFromFloat(255.999 * b));
+    const intensity = Interval.Init(0.000, 0.999);
+    const rbyte: i64 = @as(i64, @intFromFloat(256 * intensity.Clamp(r)));
+    const gbyte: i64 = @as(i64, @intFromFloat(256 * intensity.Clamp(g)));
+    const bbyte: i64 = @as(i64, @intFromFloat(256 * intensity.Clamp(b)));
 
     try stdout.print("{d} {d} {d}\n", .{ rbyte, gbyte, bbyte });
 }
@@ -158,6 +161,8 @@ const Camera = struct {
     pixel00Loc: Point3 = Point3{}, // location of pixel 0,0
     pixelDeltaU: Vec3 = Vec3{}, // offset to pixel to the right
     pixelDeltaV: Vec3 = Vec3{}, // off to pixel below
+    samplesPerPixel: i64 = 10, // count of random samples for each pixel
+    pixelSamplesScale: f64 = undefined, // color scale factor for a sum of pixel samples
 
     pub fn Render(self: *Camera, world: HittableList) !void {
         self.Initialize();
@@ -170,16 +175,15 @@ const Camera = struct {
 
             var i: i64 = 0;
             while (i < self.imageWidth) : (i = i + 1) {
-                const pixelCenter = self.pixel00Loc.Add(self.pixelDeltaU.MultI64(i)).Add(self.pixelDeltaV.MultI64(j));
-                const rayDirection = pixelCenter.Sub(self.cameraCenter);
-                const ray = Ray{ .orig = self.cameraCenter, .dir = rayDirection };
-                // debug.print("pixel center: {any}\n", .{pixelCenter});
-                // debug.print("camera center: {any}\nray direction: {any}\n", .{ cameraCenter, rayDirection });
+                var pixelColor = Color{};
+                var sample: i64 = 0;
 
-                const pixelColor = self.rayColor(ray, world);
-                // debug.print("pixel color: {any}\n", .{pixelColor});
-                try writeColor(pixelColor);
-                // debug.print("\n", .{});
+                while (sample < self.samplesPerPixel) : (sample = sample + 1) {
+                    const ray = self.getRay(i, j);
+                    pixelColor = pixelColor.Add(self.rayColor(ray, world));
+                }
+
+                try writeColor(pixelColor.MultF64(self.pixelSamplesScale));
             }
         }
 
@@ -193,6 +197,8 @@ const Camera = struct {
             self.imageHeight = 1;
         }
         debug.print("width: {any} aspect radio: {any} height: {any}\n", .{ self.imageWidth, self.aspectRadio, self.imageHeight });
+
+        self.pixelSamplesScale = 1.0 / @as(f64, @floatFromInt(self.samplesPerPixel));
 
         // determine viewport dimensions
         const focalLength: f64 = 1.0;
@@ -210,6 +216,29 @@ const Camera = struct {
         // calculate the location of the upper left pixel
         const viewportUpperLeft = self.cameraCenter.Sub(Vec3{ .z = focalLength }).Sub(viewportU.DivI64(2)).Sub(viewportV.DivI64(2));
         self.pixel00Loc = self.pixelDeltaU.Add(self.pixelDeltaV).MultF64(0.5).Add(viewportUpperLeft);
+    }
+
+    // construct a camera ray originating from the origin and directed at randomdly sampled
+    // point around the pixel location i, j
+    fn getRay(self: Camera, i: i64, j: i64) Ray {
+        const offset = self.sampleSquare();
+
+        const ixu = self.pixelDeltaU.MultF64((@as(f64, @floatFromInt(i)) + offset.X()));
+        const jyv = self.pixelDeltaV.MultF64((@as(f64, @floatFromInt(j)) + offset.Y()));
+        const pixelSample = self.pixel00Loc.Add(ixu).Add(jyv);
+
+        const rayOrigin = self.cameraCenter;
+        const rayDirection = pixelSample.Sub(rayOrigin);
+
+        return Ray{ .orig = rayOrigin, .dir = rayDirection };
+    }
+
+    // returns the vector to a random point in the [-.5, -.5]-[+.5, +.5] unit square
+    fn sampleSquare(_: Camera) Vec3 {
+        return Vec3{
+            .x = rand_f64_01() - 0.5,
+            .y = rand_f64_01() - 0.5,
+        };
     }
 
     fn rayColor(_: Camera, ray: Ray, world: HittableList) Color {
@@ -363,6 +392,12 @@ const Interval = struct {
     pub fn Surrounds(self: Interval, x: f64) bool {
         return self.min < x and x < self.max;
     }
+
+    pub fn Clamp(self: Interval, x: f64) f64 {
+        if (x < self.min) return self.min;
+        if (x > self.max) return self.max;
+        return x;
+    }
 };
 
 const empty: Interval = Interval.Init(infinity, -infinity);
@@ -373,4 +408,22 @@ const pi: f64 = 3.1415926535897932385;
 
 fn degToRad(degrees: f64) f64 {
     return (degrees * pi) / 180.0;
+}
+
+// returns a random real number in [0, 1)
+fn rand_f64_01() f64 {
+    var seed: u64 = undefined;
+    std.posix.getrandom(std.mem.asBytes(&seed)) catch |err| {
+        std.debug.print("random number: {any}\n", .{err});
+    };
+    var prng = std.Random.DefaultPrng.init(seed);
+
+    const rand = prng.random();
+
+    return rand.float(f64);
+}
+
+// returns a random real number in [min, max)
+fn rand_f64(min: f64, max: f64) f64 {
+    return min + (max - min) * rand_f64_01();
 }
