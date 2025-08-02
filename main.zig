@@ -108,6 +108,22 @@ const Vec3 = struct {
             .z = -self.z,
         };
     }
+
+    pub fn Random_01() Vec3 {
+        return Vec3{
+            .x = rand_f64_01(),
+            .y = rand_f64_01(),
+            .z = rand_f64_01(),
+        };
+    }
+
+    pub fn Random(min: f64, max: f64) Vec3 {
+        return Vec3{
+            .x = rand_f64(min, max),
+            .y = rand_f64(min, max),
+            .z = rand_f64(min, max),
+        };
+    }
 };
 
 const Point3 = Vec3;
@@ -151,6 +167,25 @@ fn dot(u: Vec3, v: Vec3) f64 {
 
 fn unitVector(v: Vec3) Vec3 {
     return v.DivF64(v.Length());
+}
+
+fn randomUnitVector() Vec3 {
+    while (true) {
+        const p = Vec3.Random(-1.0, 1.0);
+        const lensq = p.LengthSquared();
+        // NOTE: in the tutorial there is another check here
+        if (lensq < 1.0) {
+            return p.DivF64(std.math.sqrt(lensq));
+        }
+    }
+}
+
+fn randomOnHemisphere(normal: Vec3) Vec3 {
+    const onUnitSphere = randomUnitVector();
+    if (dot(onUnitSphere, normal) > 0.0) { // in the same hemisphere as the normal
+        return onUnitSphere;
+    }
+    return onUnitSphere.Reverse();
 }
 
 const Camera = struct {
@@ -241,10 +276,11 @@ const Camera = struct {
         };
     }
 
-    fn rayColor(_: Camera, ray: Ray, world: HittableList) Color {
+    fn rayColor(self: Camera, ray: Ray, world: HittableList) Color {
         var rec = HitRecord{};
         if (world.Hit(ray, Interval.Init(0, infinity), &rec)) {
-            return rec.Normal().Add(Color{ .x = 1.0, .y = 1.0, .z = 1.0 }).MultF64(0.5);
+            const direction = randomOnHemisphere(rec.Normal());
+            return self.rayColor(Ray{ .orig = rec.p, .dir = direction }, world).MultF64(0.5);
         }
 
         const unitDirection = unitVector(ray.Direction());
