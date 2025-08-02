@@ -14,6 +14,7 @@ pub fn main() !void {
     cam.aspectRadio = 16.0 / 9.0;
     cam.imageWidth = 400;
     cam.samplesPerPixel = 100;
+    cam.maxDepth = 50;
 
     try cam.Render(world);
 }
@@ -198,6 +199,7 @@ const Camera = struct {
     pixelDeltaV: Vec3 = Vec3{}, // off to pixel below
     samplesPerPixel: i64 = 10, // count of random samples for each pixel
     pixelSamplesScale: f64 = undefined, // color scale factor for a sum of pixel samples
+    maxDepth: i64 = 10, // maximum number of rays to bounce into scene
 
     pub fn Render(self: *Camera, world: HittableList) !void {
         self.Initialize();
@@ -215,7 +217,7 @@ const Camera = struct {
 
                 while (sample < self.samplesPerPixel) : (sample = sample + 1) {
                     const ray = self.getRay(i, j);
-                    pixelColor = pixelColor.Add(self.rayColor(ray, world));
+                    pixelColor = pixelColor.Add(self.rayColor(ray, self.maxDepth, world));
                 }
 
                 try writeColor(pixelColor.MultF64(self.pixelSamplesScale));
@@ -276,11 +278,16 @@ const Camera = struct {
         };
     }
 
-    fn rayColor(self: Camera, ray: Ray, world: HittableList) Color {
+    fn rayColor(self: Camera, ray: Ray, depth: i64, world: HittableList) Color {
+        // if we've exceeded the ray bounce limit, no more light is gathered
+        if (depth <= 0) {
+            return Color{};
+        }
+
         var rec = HitRecord{};
         if (world.Hit(ray, Interval.Init(0, infinity), &rec)) {
             const direction = randomOnHemisphere(rec.Normal());
-            return self.rayColor(Ray{ .orig = rec.p, .dir = direction }, world).MultF64(0.5);
+            return self.rayColor(Ray{ .orig = rec.p, .dir = direction }, depth - 1, world).MultF64(0.5);
         }
 
         const unitDirection = unitVector(ray.Direction());
