@@ -13,10 +13,10 @@ pub fn main() !void {
     const center = Lambertian.Init(Color{ .x = 0.1, .y = 0.2, .z = 0.5 });
     var matCenter = Material{ .lamertian = center };
 
-    const left = Metal.Init(Color{ .x = 0.8, .y = 0.8, .z = 0.8 });
+    const left = Metal.Init(Color{ .x = 0.8, .y = 0.8, .z = 0.8 }, 0.3);
     var matLeft = Material{ .metal = left };
 
-    const right = Metal.Init(Color{ .x = 0.8, .y = 0.6, .z = 0.2 });
+    const right = Metal.Init(Color{ .x = 0.8, .y = 0.6, .z = 0.2 }, 1.0);
     var matRight = Material{ .metal = right };
 
     try world.Add(Sphere.Init(Point3{ .x = 0.0, .y = -100.5, .z = -1.0 }, 100.0, &matGround));
@@ -500,16 +500,18 @@ const Lambertian = struct {
 
 const Metal = struct {
     albedo: Color,
+    fuzz: f64,
 
-    pub fn Init(albedo: Color) Metal {
-        return Metal{ .albedo = albedo };
+    pub fn Init(albedo: Color, fuzz: f64) Metal {
+        return Metal{ .albedo = albedo, .fuzz = if (fuzz > 1.0) 1.0 else fuzz };
     }
 
     pub fn Scatter(self: Metal, rayIn: Ray, rec: HitRecord, attenuation: *Color, scattered: *Ray) bool {
-        const reflected = reflect(rayIn.Direction(), rec.Normal());
+        var reflected = reflect(rayIn.Direction(), rec.Normal());
+        reflected = randomUnitVector().MultF64(self.fuzz).Add(unitVector(reflected));
         scattered.* = Ray{ .orig = rec.p, .dir = reflected };
         attenuation.* = self.albedo;
-        return true;
+        return (dot(scattered.Direction(), rec.Normal()) > 0);
     }
 };
 
