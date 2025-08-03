@@ -286,7 +286,7 @@ const Camera = struct {
 
         var rec = HitRecord{};
         if (world.Hit(ray, Interval.Init(0.001, infinity), &rec)) {
-            const direction = randomOnHemisphere(rec.Normal());
+            const direction = rec.Normal().Add(randomUnitVector());
             return self.rayColor(Ray{ .orig = rec.p, .dir = direction }, depth - 1, world).MultF64(0.5);
         }
 
