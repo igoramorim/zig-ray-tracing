@@ -133,9 +133,13 @@ const Color = Vec3;
 
 fn writeColor(pixelColor: Color) !void {
     // values in range 0.0 to 1.0
-    const r: f64 = pixelColor.X();
-    const g: f64 = pixelColor.Y();
-    const b: f64 = pixelColor.Z();
+    var r: f64 = pixelColor.X();
+    var g: f64 = pixelColor.Y();
+    var b: f64 = pixelColor.Z();
+
+    r = linearToGamma(r);
+    g = linearToGamma(g);
+    b = linearToGamma(b);
 
     // values in range 0 to 255
     const intensity = Interval.Init(0.000, 0.999);
@@ -144,6 +148,13 @@ fn writeColor(pixelColor: Color) !void {
     const bbyte: i64 = @as(i64, @intFromFloat(256 * intensity.Clamp(b)));
 
     try stdout.print("{d} {d} {d}\n", .{ rbyte, gbyte, bbyte });
+}
+
+fn linearToGamma(linearComponent: f64) f64 {
+    if (linearComponent > 0) {
+        return std.math.sqrt(linearComponent);
+    }
+    return 0;
 }
 
 fn hitSphere(center: Vec3, radius: f64, ray: Ray) f64 {
