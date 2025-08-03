@@ -6,8 +6,23 @@ pub fn main() !void {
     // world
     var world = HittableList.Init();
     defer world.Clear();
-    try world.Add(Sphere.Init(Vec3{ .x = 0.0, .y = 0.0, .z = -1.0 }, 0.5));
-    try world.Add(Sphere.Init(Vec3{ .x = 0.0, .y = -100.5, .z = -1.0 }, 100.0));
+
+    const ground = Lambertian.Init(Color{ .x = 0.8, .y = 0.8, .z = 0.0 });
+    var matGround = Material{ .lamertian = ground };
+
+    const center = Lambertian.Init(Color{ .x = 0.1, .y = 0.2, .z = 0.5 });
+    var matCenter = Material{ .lamertian = center };
+
+    const left = Metal.Init(Color{ .x = 0.8, .y = 0.8, .z = 0.8 });
+    var matLeft = Material{ .metal = left };
+
+    const right = Metal.Init(Color{ .x = 0.8, .y = 0.6, .z = 0.2 });
+    var matRight = Material{ .metal = right };
+
+    try world.Add(Sphere.Init(Point3{ .x = 0.0, .y = -100.5, .z = -1.0 }, 100.0, &matGround));
+    try world.Add(Sphere.Init(Point3{ .x = 0.0, .y = 0.0, .z = -1.2 }, 0.5, &matCenter));
+    try world.Add(Sphere.Init(Point3{ .x = -1.0, .y = 0.0, .z = -1.0 }, 0.5, &matLeft));
+    try world.Add(Sphere.Init(Point3{ .x = 1.0, .y = 0.0, .z = -1.0 }, 0.5, &matRight));
 
     // camera
     var cam = Camera{};
@@ -125,6 +140,12 @@ const Vec3 = struct {
             .z = rand_f64(min, max),
         };
     }
+
+    // return true if the vector is close to zero in all dimensions
+    pub fn NearZero(self: Vec3) bool {
+        const s: f64 = 1e-8;
+        return @abs(self.x) < s and @abs(self.y) < s and @abs(self.z) < s;
+    }
 };
 
 const Point3 = Vec3;
@@ -198,6 +219,11 @@ fn randomOnHemisphere(normal: Vec3) Vec3 {
         return onUnitSphere;
     }
     return onUnitSphere.Reverse();
+}
+
+fn reflect(v: Vec3, n: Vec3) Vec3 {
+    const vxn = dot(v, n);
+    return v.Sub(n.MultF64(vxn).MultF64(2));
 }
 
 const Camera = struct {
@@ -297,8 +323,14 @@ const Camera = struct {
 
         var rec = HitRecord{};
         if (world.Hit(ray, Interval.Init(0.001, infinity), &rec)) {
-            const direction = rec.Normal().Add(randomUnitVector());
-            return self.rayColor(Ray{ .orig = rec.p, .dir = direction }, depth - 1, world).MultF64(0.5);
+            var scattered: Ray = undefined;
+            var attenuation = Color{};
+
+            if (rec.mat.Scatter(ray, rec, &attenuation, &scattered)) {
+                return self.rayColor(scattered, depth - 1, world).Mult(attenuation);
+            }
+
+            return Color{};
         }
 
         const unitDirection = unitVector(ray.Direction());
@@ -331,6 +363,7 @@ const Ray = struct {
 const HitRecord = struct {
     p: Point3 = Point3{},
     normal: Vec3 = Vec3{},
+    mat: *Material = undefined,
     t: f64 = undefined,
     frontFace: bool = undefined,
 
@@ -354,9 +387,14 @@ const HitRecord = struct {
 const Sphere = struct {
     center: Point3,
     radius: f64,
+    mat: *Material = undefined,
 
-    pub fn Init(center: Point3, radius: f64) Sphere {
-        return Sphere{ .center = center, .radius = @max(0.0, radius) };
+    pub fn Init(center: Point3, radius: f64, mat: *Material) Sphere {
+        return Sphere{
+            .center = center,
+            .radius = @max(0.0, radius),
+            .mat = mat,
+        };
     }
 
     pub fn Hit(self: Sphere, ray: Ray, rayT: Interval, rec: *HitRecord) bool {
@@ -385,6 +423,7 @@ const Sphere = struct {
         rec.p = ray.At(rec.t);
         const outwardNormal: Vec3 = rec.p.Sub(self.center).DivF64(self.radius);
         rec.SetFaceNormal(ray, outwardNormal);
+        rec.mat = self.mat;
 
         return true;
     }
@@ -424,6 +463,53 @@ const HittableList = struct {
         }
 
         return hitAnything;
+    }
+};
+
+const Material = union(enum) {
+    lamertian: Lambertian,
+    metal: Metal,
+
+    pub fn Scatter(self: Material, rayIn: Ray, rec: HitRecord, attenuation: *Color, scattered: *Ray) bool {
+        switch (self) {
+            inline else => |mat| return mat.Scatter(rayIn, rec, attenuation, scattered),
+        }
+    }
+};
+
+const Lambertian = struct {
+    albedo: Color,
+
+    pub fn Init(albedo: Color) Lambertian {
+        return Lambertian{ .albedo = albedo };
+    }
+
+    pub fn Scatter(self: Lambertian, _: Ray, rec: HitRecord, attenuation: *Color, scattered: *Ray) bool {
+        var scatterDirection = rec.Normal().Add(randomUnitVector());
+
+        // catch degenerate scatter direction
+        if (scatterDirection.NearZero()) {
+            scatterDirection = rec.Normal();
+        }
+
+        scattered.* = Ray{ .orig = rec.p, .dir = scatterDirection };
+        attenuation.* = self.albedo;
+        return true;
+    }
+};
+
+const Metal = struct {
+    albedo: Color,
+
+    pub fn Init(albedo: Color) Metal {
+        return Metal{ .albedo = albedo };
+    }
+
+    pub fn Scatter(self: Metal, rayIn: Ray, rec: HitRecord, attenuation: *Color, scattered: *Ray) bool {
+        const reflected = reflect(rayIn.Direction(), rec.Normal());
+        scattered.* = Ray{ .orig = rec.p, .dir = reflected };
+        attenuation.* = self.albedo;
+        return true;
     }
 };
 
