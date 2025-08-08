@@ -13,8 +13,8 @@ pub fn main() !void {
     const center = Lambertian.Init(Color{ .x = 0.1, .y = 0.2, .z = 0.5 });
     var matCenter = Material{ .lamertian = center };
 
-    const left = Metal.Init(Color{ .x = 0.8, .y = 0.8, .z = 0.8 }, 0.3);
-    var matLeft = Material{ .metal = left };
+    const left = Dielectric{ .refractionIndex = 1.5 };
+    var matLeft = Material{ .dielectric = left };
 
     const right = Metal.Init(Color{ .x = 0.8, .y = 0.6, .z = 0.2 }, 1.0);
     var matRight = Material{ .metal = right };
@@ -224,6 +224,13 @@ fn randomOnHemisphere(normal: Vec3) Vec3 {
 fn reflect(v: Vec3, n: Vec3) Vec3 {
     const vxn = dot(v, n);
     return v.Sub(n.MultF64(vxn).MultF64(2));
+}
+
+fn refract(uv: Vec3, n: Vec3, etai_over_etat: f64) Vec3 {
+    const cost_theta = @min(dot(uv.Reverse(), n), 1.0);
+    const r_out_perp = n.MultF64(cost_theta).Add(uv).MultF64(etai_over_etat);
+    const r_out_parallel = n.MultF64(-@sqrt((@abs(1.0 - r_out_perp.LengthSquared()))));
+    return r_out_perp.Add(r_out_parallel);
 }
 
 const Camera = struct {
@@ -469,6 +476,7 @@ const HittableList = struct {
 const Material = union(enum) {
     lamertian: Lambertian,
     metal: Metal,
+    dielectric: Dielectric,
 
     pub fn Scatter(self: Material, rayIn: Ray, rec: HitRecord, attenuation: *Color, scattered: *Ray) bool {
         switch (self) {
@@ -512,6 +520,23 @@ const Metal = struct {
         scattered.* = Ray{ .orig = rec.p, .dir = reflected };
         attenuation.* = self.albedo;
         return (dot(scattered.Direction(), rec.Normal()) > 0);
+    }
+};
+
+const Dielectric = struct {
+    // refractive index in vacuum or air, or the ratio of the material's refractive index over
+    // the refractive index of the enclosing media
+    refractionIndex: f64,
+
+    pub fn Scatter(self: Dielectric, rayIn: Ray, rec: HitRecord, attenuation: *Color, scattered: *Ray) bool {
+        attenuation.* = Color{ .x = 1.0, .y = 1.0, .z = 1.0 };
+        const ri = if (rec.frontFace) (1.0 / self.refractionIndex) else self.refractionIndex;
+
+        const unitDirection = unitVector(rayIn.Direction());
+        const refracted = refract(unitDirection, rec.Normal(), ri);
+
+        scattered.* = Ray{ .orig = rec.p, .dir = refracted };
+        return true;
     }
 };
 
