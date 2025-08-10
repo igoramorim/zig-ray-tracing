@@ -13,7 +13,7 @@ pub fn main() !void {
     const center = Lambertian.Init(Color{ .x = 0.1, .y = 0.2, .z = 0.5 });
     var matCenter = Material{ .lamertian = center };
 
-    const left = Dielectric{ .refractionIndex = 1.5 };
+    const left = Dielectric{ .refractionIndex = 1.0 / 1.33 };
     var matLeft = Material{ .dielectric = left };
 
     const right = Metal.Init(Color{ .x = 0.8, .y = 0.6, .z = 0.2 }, 1.0);
@@ -529,13 +529,24 @@ const Dielectric = struct {
     refractionIndex: f64,
 
     pub fn Scatter(self: Dielectric, rayIn: Ray, rec: HitRecord, attenuation: *Color, scattered: *Ray) bool {
+        // attenuation 1 means the glass surface absorbs nothing
         attenuation.* = Color{ .x = 1.0, .y = 1.0, .z = 1.0 };
         const ri = if (rec.frontFace) (1.0 / self.refractionIndex) else self.refractionIndex;
 
         const unitDirection = unitVector(rayIn.Direction());
-        const refracted = refract(unitDirection, rec.Normal(), ri);
+        const cosTheta = @min(dot(unitDirection.Reverse(), rec.Normal()), 1.0);
+        const sinTheta = @sqrt(1.0 - (cosTheta * cosTheta));
 
-        scattered.* = Ray{ .orig = rec.p, .dir = refracted };
+        const cannotRefract = (ri * sinTheta) > 1.0;
+        var direction: Vec3 = undefined;
+
+        if (cannotRefract) {
+            direction = reflect(unitDirection, rec.Normal());
+        } else {
+            direction = refract(unitDirection, rec.Normal(), ri);
+        }
+
+        scattered.* = Ray{ .orig = rec.p, .dir = direction };
         return true;
     }
 };
