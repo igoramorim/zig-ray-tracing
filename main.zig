@@ -13,7 +13,7 @@ pub fn main() !void {
     const center = Lambertian.Init(Color{ .x = 0.1, .y = 0.2, .z = 0.5 });
     var matCenter = Material{ .lamertian = center };
 
-    const left = Dielectric{ .refractionIndex = 1.0 / 1.33 };
+    const left = Dielectric{ .refractionIndex = 1.5 };
     var matLeft = Material{ .dielectric = left };
 
     const right = Metal.Init(Color{ .x = 0.8, .y = 0.6, .z = 0.2 }, 1.0);
@@ -540,7 +540,7 @@ const Dielectric = struct {
         const cannotRefract = (ri * sinTheta) > 1.0;
         var direction: Vec3 = undefined;
 
-        if (cannotRefract) {
+        if (cannotRefract or reflectance(cosTheta, ri) > rand_f64_01()) {
             direction = reflect(unitDirection, rec.Normal());
         } else {
             direction = refract(unitDirection, rec.Normal(), ri);
@@ -548,6 +548,13 @@ const Dielectric = struct {
 
         scattered.* = Ray{ .orig = rec.p, .dir = direction };
         return true;
+    }
+
+    fn reflectance(cosine: f64, refractionIndex: f64) f64 {
+        // use Schlick's approximation for reflectance
+        var r0 = (1 - refractionIndex) / (1 + refractionIndex);
+        r0 = r0 * r0;
+        return r0 + (1 - r0) * std.math.pow(f64, (1 - cosine), 5);
     }
 };
 
