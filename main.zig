@@ -16,12 +16,16 @@ pub fn main() !void {
     const left = Dielectric{ .refractionIndex = 1.5 };
     var matLeft = Material{ .dielectric = left };
 
+    const bubble = Dielectric{ .refractionIndex = 1.0 / 1.5 };
+    var matBubble = Material{ .dielectric = bubble };
+
     const right = Metal.Init(Color{ .x = 0.8, .y = 0.6, .z = 0.2 }, 1.0);
     var matRight = Material{ .metal = right };
 
     try world.Add(Sphere.Init(Point3{ .x = 0.0, .y = -100.5, .z = -1.0 }, 100.0, &matGround));
     try world.Add(Sphere.Init(Point3{ .x = 0.0, .y = 0.0, .z = -1.2 }, 0.5, &matCenter));
     try world.Add(Sphere.Init(Point3{ .x = -1.0, .y = 0.0, .z = -1.0 }, 0.5, &matLeft));
+    try world.Add(Sphere.Init(Point3{ .x = -1.0, .y = 0.0, .z = -1.0 }, 0.4, &matBubble));
     try world.Add(Sphere.Init(Point3{ .x = 1.0, .y = 0.0, .z = -1.0 }, 0.5, &matRight));
 
     // camera
