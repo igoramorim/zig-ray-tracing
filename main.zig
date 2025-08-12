@@ -34,7 +34,7 @@ pub fn main() !void {
     cam.imageWidth = 400;
     cam.samplesPerPixel = 100;
     cam.maxDepth = 50;
-    cam.vfov = 90;
+    cam.vfov = 20;
     cam.lookFrom = Point3{ .x = -2, .y = 2, .z = 1 };
     cam.lookAt = Point3{ .z = -1 };
     cam.vup = Vec3{ .y = 1 };
