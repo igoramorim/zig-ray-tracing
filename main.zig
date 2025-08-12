@@ -7,26 +7,16 @@ pub fn main() !void {
     var world = HittableList.Init();
     defer world.Clear();
 
-    const ground = Lambertian.Init(Color{ .x = 0.8, .y = 0.8, .z = 0.0 });
-    var matGround = Material{ .lamertian = ground };
+    const R = @cos(pi / 4);
 
-    const center = Lambertian.Init(Color{ .x = 0.1, .y = 0.2, .z = 0.5 });
-    var matCenter = Material{ .lamertian = center };
+    const left = Lambertian.Init(Color{ .z = 1.0 });
+    var matLeft = Material{ .lamertian = left };
 
-    const left = Dielectric{ .refractionIndex = 1.5 };
-    var matLeft = Material{ .dielectric = left };
+    const right = Lambertian.Init(Color{ .x = 1.0 });
+    var matRight = Material{ .lamertian = right };
 
-    const bubble = Dielectric{ .refractionIndex = 1.0 / 1.5 };
-    var matBubble = Material{ .dielectric = bubble };
-
-    const right = Metal.Init(Color{ .x = 0.8, .y = 0.6, .z = 0.2 }, 1.0);
-    var matRight = Material{ .metal = right };
-
-    try world.Add(Sphere.Init(Point3{ .x = 0.0, .y = -100.5, .z = -1.0 }, 100.0, &matGround));
-    try world.Add(Sphere.Init(Point3{ .x = 0.0, .y = 0.0, .z = -1.2 }, 0.5, &matCenter));
-    try world.Add(Sphere.Init(Point3{ .x = -1.0, .y = 0.0, .z = -1.0 }, 0.5, &matLeft));
-    try world.Add(Sphere.Init(Point3{ .x = -1.0, .y = 0.0, .z = -1.0 }, 0.4, &matBubble));
-    try world.Add(Sphere.Init(Point3{ .x = 1.0, .y = 0.0, .z = -1.0 }, 0.5, &matRight));
+    try world.Add(Sphere.Init(Point3{ .x = -R, .y = 0.0, .z = -1.0 }, R, &matLeft));
+    try world.Add(Sphere.Init(Point3{ .x = R, .y = 0.0, .z = -1.0 }, R, &matRight));
 
     // camera
     var cam = Camera{};
@@ -34,6 +24,7 @@ pub fn main() !void {
     cam.imageWidth = 400;
     cam.samplesPerPixel = 100;
     cam.maxDepth = 50;
+    cam.vfov = 90;
 
     try cam.Render(world);
 }
@@ -248,6 +239,7 @@ const Camera = struct {
     samplesPerPixel: i64 = 10, // count of random samples for each pixel
     pixelSamplesScale: f64 = undefined, // color scale factor for a sum of pixel samples
     maxDepth: i64 = 10, // maximum number of rays to bounce into scene
+    vfov: f64 = 90, // vertical view angle (field of view)
 
     pub fn Render(self: *Camera, world: HittableList) !void {
         self.Initialize();
@@ -287,7 +279,9 @@ const Camera = struct {
 
         // determine viewport dimensions
         const focalLength: f64 = 1.0;
-        const viewportHeight: f64 = 2.0;
+        const theta = degToRad(self.vfov);
+        const h = @tan(theta / 2);
+        const viewportHeight: f64 = 2.0 * h * focalLength;
         const viewportWidth: f64 = viewportHeight * (@as(f64, @floatFromInt(self.imageWidth)) / @as(f64, @floatFromInt(self.imageHeight)));
 
         // calculate the vectors across the horizontal and down the vertical viewport edges
