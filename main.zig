@@ -7,16 +7,26 @@ pub fn main() !void {
     var world = HittableList.Init();
     defer world.Clear();
 
-    const R = @cos(pi / 4);
+    const ground = Lambertian.Init(Color{ .x = 0.8, .y = 0.8, .z = 0.0 });
+    var matGround = Material{ .lamertian = ground };
 
-    const left = Lambertian.Init(Color{ .z = 1.0 });
-    var matLeft = Material{ .lamertian = left };
+    const center = Lambertian.Init(Color{ .x = 0.1, .y = 0.2, .z = 0.5 });
+    var matCenter = Material{ .lamertian = center };
 
-    const right = Lambertian.Init(Color{ .x = 1.0 });
-    var matRight = Material{ .lamertian = right };
+    const left = Dielectric{ .refractionIndex = 1.5 };
+    var matLeft = Material{ .dielectric = left };
 
-    try world.Add(Sphere.Init(Point3{ .x = -R, .y = 0.0, .z = -1.0 }, R, &matLeft));
-    try world.Add(Sphere.Init(Point3{ .x = R, .y = 0.0, .z = -1.0 }, R, &matRight));
+    const right = Metal.Init(Color{ .x = 0.8, .y = 0.6, .z = 0.2 }, 1.0);
+    var matRight = Material{ .metal = right };
+
+    const bubble = Dielectric{ .refractionIndex = 1.0 / 1.5 };
+    var matBubble = Material{ .dielectric = bubble };
+
+    try world.Add(Sphere.Init(Point3{ .x = 0.0, .y = -100.5, .z = -1.0 }, 100.0, &matGround));
+    try world.Add(Sphere.Init(Point3{ .x = 0.0, .y = 0.0, .z = -1.2 }, 0.5, &matCenter));
+    try world.Add(Sphere.Init(Point3{ .x = -1.0, .y = 0.0, .z = -1.0 }, 0.5, &matLeft));
+    try world.Add(Sphere.Init(Point3{ .x = -1.0, .y = 0.0, .z = -1.0 }, 0.4, &matBubble));
+    try world.Add(Sphere.Init(Point3{ .x = 1.0, .y = 0.0, .z = -1.0 }, 0.5, &matRight));
 
     // camera
     var cam = Camera{};
@@ -25,6 +35,9 @@ pub fn main() !void {
     cam.samplesPerPixel = 100;
     cam.maxDepth = 50;
     cam.vfov = 90;
+    cam.lookFrom = Point3{ .x = -2, .y = 2, .z = 1 };
+    cam.lookAt = Point3{ .z = -1 };
+    cam.vup = Vec3{ .y = 1 };
 
     try cam.Render(world);
 }
@@ -193,6 +206,14 @@ fn dot(u: Vec3, v: Vec3) f64 {
         u.Z() * v.Z();
 }
 
+fn cross(u: Vec3, v: Vec3) Vec3 {
+    return Vec3{
+        .x = u.Y() * v.Z() - u.Z() * v.Y(),
+        .y = u.Z() * v.X() - u.X() * v.Z(),
+        .z = u.X() * v.Y() - u.Y() * v.X(),
+    };
+}
+
 fn unitVector(v: Vec3) Vec3 {
     return v.DivF64(v.Length());
 }
@@ -240,6 +261,12 @@ const Camera = struct {
     pixelSamplesScale: f64 = undefined, // color scale factor for a sum of pixel samples
     maxDepth: i64 = 10, // maximum number of rays to bounce into scene
     vfov: f64 = 90, // vertical view angle (field of view)
+    lookFrom: Point3 = Point3{}, // point the camera is looking from
+    lookAt: Point3 = Point3{ .z = -1 }, // point the camera is looking at
+    vup: Vec3 = Vec3{ .y = 1.0 }, // camera-relative "up" direction
+    u: Vec3 = undefined, // camera frame basis vectors
+    v: Vec3 = undefined,
+    w: Vec3 = undefined,
 
     pub fn Render(self: *Camera, world: HittableList) !void {
         self.Initialize();
@@ -277,23 +304,30 @@ const Camera = struct {
 
         self.pixelSamplesScale = 1.0 / @as(f64, @floatFromInt(self.samplesPerPixel));
 
+        self.cameraCenter = self.lookFrom;
+
         // determine viewport dimensions
-        const focalLength: f64 = 1.0;
+        const focalLength: f64 = self.lookFrom.Sub(self.lookAt).Length();
         const theta = degToRad(self.vfov);
         const h = @tan(theta / 2);
         const viewportHeight: f64 = 2.0 * h * focalLength;
         const viewportWidth: f64 = viewportHeight * (@as(f64, @floatFromInt(self.imageWidth)) / @as(f64, @floatFromInt(self.imageHeight)));
 
+        // calculate the u,v,w unit basis vectors for the camera coordinate frame
+        self.w = unitVector(self.lookFrom.Sub(self.lookAt));
+        self.u = unitVector(cross(self.vup, self.w));
+        self.v = cross(self.w, self.u);
+
         // calculate the vectors across the horizontal and down the vertical viewport edges
-        const viewportU = Vec3{ .x = viewportWidth };
-        const viewportV = Vec3{ .y = -viewportHeight };
+        const viewportU = self.u.MultF64(viewportWidth); // vector across viewport horizontal edge
+        const viewportV = self.v.Reverse().MultF64(viewportHeight); // vector down viewport vertical edge
 
         // calculate the horizontal and vertical delta vectors from pixel to pixel
         self.pixelDeltaU = viewportU.DivI64(self.imageWidth);
         self.pixelDeltaV = viewportV.DivI64(self.imageHeight);
 
         // calculate the location of the upper left pixel
-        const viewportUpperLeft = self.cameraCenter.Sub(Vec3{ .z = focalLength }).Sub(viewportU.DivI64(2)).Sub(viewportV.DivI64(2));
+        const viewportUpperLeft = self.cameraCenter.Sub(self.w.MultF64(focalLength)).Sub(viewportU.DivI64(2)).Sub(viewportV.DivI64(2));
         self.pixel00Loc = self.pixelDeltaU.Add(self.pixelDeltaV).MultF64(0.5).Add(viewportUpperLeft);
     }
 
