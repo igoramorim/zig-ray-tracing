@@ -38,6 +38,8 @@ pub fn main() !void {
     cam.lookFrom = Point3{ .x = -2, .y = 2, .z = 1 };
     cam.lookAt = Point3{ .z = -1 };
     cam.vup = Vec3{ .y = 1 };
+    cam.defocusAngle = 10.0;
+    cam.focusDist = 3.4;
 
     try cam.Render(world);
 }
@@ -218,6 +220,17 @@ fn unitVector(v: Vec3) Vec3 {
     return v.DivF64(v.Length());
 }
 
+fn randomInUnitDisk() Vec3 {
+    while (true) {
+        const p = Vec3{
+            .x = rand_f64(-1, 1),
+            .y = rand_f64(-1, 1),
+        };
+
+        if (p.LengthSquared() < 1) return p;
+    }
+}
+
 fn randomUnitVector() Vec3 {
     while (true) {
         const p = Vec3.Random(-1.0, 1.0);
@@ -267,6 +280,10 @@ const Camera = struct {
     u: Vec3 = undefined, // camera frame basis vectors
     v: Vec3 = undefined,
     w: Vec3 = undefined,
+    defocusAngle: f64 = 0, // variation angle of rays through each pixel
+    focusDist: f64 = 10, // distance from camera lookfrom point to plane of perfect focus
+    defocusDiskU: Vec3 = undefined, // defocus disk horizontal radius
+    defocusDiskV: Vec3 = undefined, // defocus disk vertical radius
 
     pub fn Render(self: *Camera, world: HittableList) !void {
         self.Initialize();
@@ -307,10 +324,9 @@ const Camera = struct {
         self.cameraCenter = self.lookFrom;
 
         // determine viewport dimensions
-        const focalLength: f64 = self.lookFrom.Sub(self.lookAt).Length();
         const theta = degToRad(self.vfov);
         const h = @tan(theta / 2);
-        const viewportHeight: f64 = 2.0 * h * focalLength;
+        const viewportHeight: f64 = 2.0 * h * self.focusDist;
         const viewportWidth: f64 = viewportHeight * (@as(f64, @floatFromInt(self.imageWidth)) / @as(f64, @floatFromInt(self.imageHeight)));
 
         // calculate the u,v,w unit basis vectors for the camera coordinate frame
@@ -327,11 +343,16 @@ const Camera = struct {
         self.pixelDeltaV = viewportV.DivI64(self.imageHeight);
 
         // calculate the location of the upper left pixel
-        const viewportUpperLeft = self.cameraCenter.Sub(self.w.MultF64(focalLength)).Sub(viewportU.DivI64(2)).Sub(viewportV.DivI64(2));
+        const viewportUpperLeft = self.cameraCenter.Sub(self.w.MultF64(self.focusDist)).Sub(viewportU.DivI64(2)).Sub(viewportV.DivI64(2));
         self.pixel00Loc = self.pixelDeltaU.Add(self.pixelDeltaV).MultF64(0.5).Add(viewportUpperLeft);
+
+        // calculate the camera defocus disk basis vectors
+        const defocusRadius = self.focusDist * @tan(degToRad(self.defocusAngle / 2.0));
+        self.defocusDiskU = self.u.MultF64(defocusRadius);
+        self.defocusDiskV = self.v.MultF64(defocusRadius);
     }
 
-    // construct a camera ray originating from the origin and directed at randomdly sampled
+    // construct a camera ray originating from the defocus disk and directed at randomdly sampled
     // point around the pixel location i, j
     fn getRay(self: Camera, i: i64, j: i64) Ray {
         const offset = self.sampleSquare();
@@ -340,7 +361,7 @@ const Camera = struct {
         const jyv = self.pixelDeltaV.MultF64((@as(f64, @floatFromInt(j)) + offset.Y()));
         const pixelSample = self.pixel00Loc.Add(ixu).Add(jyv);
 
-        const rayOrigin = self.cameraCenter;
+        const rayOrigin = if (self.defocusAngle <= 0) self.cameraCenter else self.defocusDiskSample();
         const rayDirection = pixelSample.Sub(rayOrigin);
 
         return Ray{ .orig = rayOrigin, .dir = rayDirection };
@@ -352,6 +373,12 @@ const Camera = struct {
             .x = rand_f64_01() - 0.5,
             .y = rand_f64_01() - 0.5,
         };
+    }
+
+    // returns a random point in the camera defocus disk
+    fn defocusDiskSample(self: Camera) Point3 {
+        const p = randomInUnitDisk();
+        return self.cameraCenter.Add(self.defocusDiskU.MultF64(p.X())).Add(self.defocusDiskV.MultF64(p.Y()));
     }
 
     fn rayColor(self: Camera, ray: Ray, depth: i64, world: HittableList) Color {
