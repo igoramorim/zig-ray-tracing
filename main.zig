@@ -7,39 +7,74 @@ pub fn main() !void {
     var world = HittableList.Init();
     defer world.Clear();
 
-    const ground = Lambertian.Init(Color{ .x = 0.8, .y = 0.8, .z = 0.0 });
-    var matGround = Material{ .lamertian = ground };
+    const ground = Lambertian.Init(Color{ .x = 0.5, .y = 0.5, .z = 0.5 });
+    const matGround = Material{ .lamertian = ground };
+    try world.Add(Sphere.Init(Point3{ .x = 0.0, .y = -1000.0, .z = 0.0 }, 1000.0, matGround));
 
-    const center = Lambertian.Init(Color{ .x = 0.1, .y = 0.2, .z = 0.5 });
-    var matCenter = Material{ .lamertian = center };
+    const it: i64 = 11;
+    var a: i64 = -it;
+    while (a < it) : (a = a + 1) {
+        var b: i64 = -it;
+        while (b < it) : (b = b + 1) {
+            const chooseMat = rand_f64_01();
 
-    const left = Dielectric{ .refractionIndex = 1.5 };
-    var matLeft = Material{ .dielectric = left };
+            const center = Point3{
+                .x = @as(f64, @floatFromInt(a)) + (0.9 * rand_f64_01()),
+                .y = 0.2,
+                .z = @as(f64, @floatFromInt(b)) + (0.9 * rand_f64_01()),
+            };
 
-    const right = Metal.Init(Color{ .x = 0.8, .y = 0.6, .z = 0.2 }, 1.0);
-    var matRight = Material{ .metal = right };
+            if (center.Sub(Point3{ .x = 4.0, .y = 0.2, .z = 0.0 }).Length() > 0.9) {
+                if (chooseMat < 0.8) {
+                    // diffuse
+                    const albedo = Color.Random_01().Mult(Color.Random_01());
+                    const mat = Lambertian.Init(albedo);
+                    const sphereMat = Material{ .lamertian = mat };
+                    try world.Add(Sphere.Init(center, 0.2, sphereMat));
+                    // std.debug.print("diffuse\t{}\t{*}\n", .{ sphereMat, &sphereMat });
+                } else if (chooseMat < 0.95) {
+                    // metal
+                    const albedo = Color.Random(0.5, 1.0);
+                    const fuzz = rand_f64(0.0, 0.5);
+                    const mat = Metal.Init(albedo, fuzz);
+                    const sphereMat = Material{ .metal = mat };
+                    try world.Add(Sphere.Init(center, 0.2, sphereMat));
+                    // std.debug.print("metal\t{}\n", .{sphereMat});
+                } else {
+                    // glass
+                    const mat = Dielectric{ .refractionIndex = 1.5 };
+                    const sphereMat = Material{ .dielectric = mat };
+                    try world.Add(Sphere.Init(center, 0.2, sphereMat));
+                    // std.debug.print("glass\t{}\n", .{&sphereMat});
+                }
+            }
+        }
+    }
 
-    const bubble = Dielectric{ .refractionIndex = 1.0 / 1.5 };
-    var matBubble = Material{ .dielectric = bubble };
+    const one = Dielectric{ .refractionIndex = 1.5 };
+    const matOne = Material{ .dielectric = one };
+    try world.Add(Sphere.Init(Point3{ .x = 0.0, .y = 1.0, .z = 0.0 }, 1.0, matOne));
 
-    try world.Add(Sphere.Init(Point3{ .x = 0.0, .y = -100.5, .z = -1.0 }, 100.0, &matGround));
-    try world.Add(Sphere.Init(Point3{ .x = 0.0, .y = 0.0, .z = -1.2 }, 0.5, &matCenter));
-    try world.Add(Sphere.Init(Point3{ .x = -1.0, .y = 0.0, .z = -1.0 }, 0.5, &matLeft));
-    try world.Add(Sphere.Init(Point3{ .x = -1.0, .y = 0.0, .z = -1.0 }, 0.4, &matBubble));
-    try world.Add(Sphere.Init(Point3{ .x = 1.0, .y = 0.0, .z = -1.0 }, 0.5, &matRight));
+    const two = Lambertian.Init(Color{ .x = 0.4, .y = 0.2, .z = 0.1 });
+    const matTwo = Material{ .lamertian = two };
+    try world.Add(Sphere.Init(Point3{ .x = -4.0, .y = 1.0, .z = 0.0 }, 1.0, matTwo));
+
+    const three = Metal.Init(Color{ .x = 0.7, .y = 0.6, .z = 0.5 }, 0.0);
+    const matThree = Material{ .metal = three };
+    try world.Add(Sphere.Init(Point3{ .x = 4.0, .y = 1.0, .z = 0.0 }, 1.0, matThree));
 
     // camera
     var cam = Camera{};
     cam.aspectRadio = 16.0 / 9.0;
     cam.imageWidth = 400;
-    cam.samplesPerPixel = 100;
+    cam.samplesPerPixel = 500;
     cam.maxDepth = 50;
     cam.vfov = 20;
-    cam.lookFrom = Point3{ .x = -2, .y = 2, .z = 1 };
-    cam.lookAt = Point3{ .z = -1 };
+    cam.lookFrom = Point3{ .x = 13.0, .y = 2, .z = 3 };
+    cam.lookAt = Point3{};
     cam.vup = Vec3{ .y = 1 };
-    cam.defocusAngle = 10.0;
-    cam.focusDist = 3.4;
+    cam.defocusAngle = 0.6;
+    cam.focusDist = 10.0;
 
     try cam.Render(world);
 }
@@ -429,7 +464,7 @@ const Ray = struct {
 const HitRecord = struct {
     p: Point3 = Point3{},
     normal: Vec3 = Vec3{},
-    mat: *Material = undefined,
+    mat: Material = undefined,
     t: f64 = undefined,
     frontFace: bool = undefined,
 
@@ -453,9 +488,9 @@ const HitRecord = struct {
 const Sphere = struct {
     center: Point3,
     radius: f64,
-    mat: *Material = undefined,
+    mat: Material = undefined,
 
-    pub fn Init(center: Point3, radius: f64, mat: *Material) Sphere {
+    pub fn Init(center: Point3, radius: f64, mat: Material) Sphere {
         return Sphere{
             .center = center,
             .radius = @max(0.0, radius),
