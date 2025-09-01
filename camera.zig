@@ -17,7 +17,7 @@ pub const Camera = struct {
     aspect_radio: f64 = 1.0, // ratio of image width over height
     image_width: i64 = 100, // rendered image width in pixel count
     image_height: i64 = undefined, // rendered image height
-    center: Point3 = Point3{}, // camera center
+    center: Point3 = Point3{}, // camera center - all rays will originate from here ("eye point")
     pixel_00_loc: Point3 = Point3{}, // location of pixel 0,0
     pixel_delta_u: Vec3 = Vec3{}, // offset to pixel to the right
     pixel_delta_v: Vec3 = Vec3{}, // off to pixel below
@@ -50,6 +50,7 @@ pub const Camera = struct {
                 var pixel_color = Color{};
                 var sample: i64 = 0;
 
+                // antialiasing: use multiple samples around the target pixel
                 while (sample < self.samples_per_pixel) : (sample = sample + 1) {
                     const ray = self.get_ray(i, j);
                     pixel_color = pixel_color.add(self.ray_color(ray, self.max_depth, world));
@@ -63,6 +64,7 @@ pub const Camera = struct {
     }
 
     fn initialize(self: *Camera) void {
+        // calculate image height from image width and aspect radio
         const heightf: f64 = @as(f64, @floatFromInt(self.image_width)) / self.aspect_radio;
         self.image_height = @as(i64, @intFromFloat(heightf));
         if (self.image_height < 1) {
@@ -150,6 +152,7 @@ pub const Camera = struct {
             return Color{};
         }
 
+        // if ray does not hit anything, render a background gradiant linearly from blue to white
         const unit_direction = vec3.unit_vector(ray.direction);
         const a: f64 = 0.5 * (unit_direction.y + 1.0);
 

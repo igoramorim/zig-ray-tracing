@@ -29,8 +29,10 @@ pub const HitRecord = struct {
 
         self.front_face = vec3.dot(r.direction, outward_normal) < 0.0;
         if (self.front_face) {
+            // ray is outside the geometry
             self.normal = outward_normal;
         } else {
+            // ray is inside the geometry
             self.normal = outward_normal.reverse();
         }
     }

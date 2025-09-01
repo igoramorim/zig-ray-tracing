@@ -33,8 +33,7 @@ pub const Sphere = struct {
         }
 
         const sqrtd: f64 = std.math.sqrt(discriminant);
-
-        // find the nearest root tha lies in the acceptable range
+        // find the nearest root that lies in the acceptable range
         var root: f64 = (h - sqrtd) / a;
         if (!ray_t.surrounds(root)) {
             root = (h + sqrtd) / a;
