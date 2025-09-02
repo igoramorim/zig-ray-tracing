@@ -53,7 +53,8 @@ pub fn main() !void {
                     // diffuse
                     const albedo = Color.rand_01().mult(Color.rand_01());
                     const mat = Material{ .lamertian = Lambertian.init(albedo) };
-                    const sphere = Sphere.init(center, 0.2, mat);
+                    const center2 = center.add(Vec3{ .y = common.rand_f64(0.0, 0.5) });
+                    const sphere = Sphere.init_moving(center, center2, 0.2, mat);
                     try world.add(Hittable{ .sphere = sphere });
                 } else if (choose_mat < 0.95) {
                     // metal

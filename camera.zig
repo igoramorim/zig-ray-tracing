@@ -116,8 +116,9 @@ pub const Camera = struct {
 
         const ray_origin = if (self.defocus_angle <= 0) self.center else self.defocus_disk_sample();
         const ray_direction = pixel_sample.sub(ray_origin);
+        const ray_time = common.rand_f64_01();
 
-        return Ray{ .origin = ray_origin, .direction = ray_direction };
+        return Ray{ .origin = ray_origin, .direction = ray_direction, .time = ray_time };
     }
 
     // returns the vector to a random point in the [-.5, -.5]-[+.5, +.5] unit square
