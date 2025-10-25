@@ -16,15 +16,15 @@ const Interval = @import("interval.zig").Interval;
 
 pub const Camera = struct {
     aspect_radio: f64 = 1.0, // ratio of image width over height
-    image_width: i64 = 100, // rendered image width in pixel count
-    image_height: i64 = undefined, // rendered image height
+    image_width: u32 = 100, // rendered image width in pixel count
+    image_height: u32 = undefined, // rendered image height
     center: Point3 = Point3{}, // camera center - all rays will originate from here ("eye point")
     pixel_00_loc: Point3 = Point3{}, // location of pixel 0,0
     pixel_delta_u: Vec3 = Vec3{}, // offset to pixel to the right
     pixel_delta_v: Vec3 = Vec3{}, // off to pixel below
-    samples_per_pixel: i64 = 10, // count of random samples for each pixel
+    samples_per_pixel: u32 = 10, // count of random samples for each pixel
     pixel_samples_scale: f64 = undefined, // color scale factor for a sum of pixel samples
-    max_depth: i64 = 10, // maximum number of rays to bounce into scene
+    max_depth: u32 = 10, // maximum number of rays to bounce into scene
     vfov: f64 = 90, // vertical view angle (field of view)
     look_from: Point3 = Point3{}, // point the camera is looking from
     look_at: Point3 = Point3{ .z = -1 }, // point the camera is looking at
@@ -43,14 +43,14 @@ pub const Camera = struct {
         var ppm = try PPM.init(allocator, @intCast(self.image_width), @intCast(self.image_height));
         defer ppm.deinit();
 
-        var j: i64 = 0;
+        var j: u32 = 0;
         while (j < self.image_height) : (j = j + 1) {
             debug.print("scan lines remaining: {d}\n", .{(self.image_height - j)});
 
-            var i: i64 = 0;
+            var i: u32 = 0;
             while (i < self.image_width) : (i = i + 1) {
                 var pixel_color = Color{};
-                var sample: i64 = 0;
+                var sample: u32 = 0;
 
                 // antialiasing: use multiple samples around the target pixel
                 while (sample < self.samples_per_pixel) : (sample = sample + 1) {
@@ -73,7 +73,7 @@ pub const Camera = struct {
     fn initialize(self: *Camera) void {
         // calculate image height from image width and aspect radio
         const heightf: f64 = @as(f64, @floatFromInt(self.image_width)) / self.aspect_radio;
-        self.image_height = @as(i64, @intFromFloat(heightf));
+        self.image_height = @as(u32, @intFromFloat(heightf));
         if (self.image_height < 1) {
             self.image_height = 1;
         }
@@ -113,7 +113,7 @@ pub const Camera = struct {
 
     // construct a camera ray originating from the defocus disk and directed at randomdly sampled
     // point around the pixel location i, j
-    fn get_ray(self: Camera, i: i64, j: i64) Ray {
+    fn get_ray(self: Camera, i: u32, j: u32) Ray {
         const offset = sample_square();
 
         const ixu = self.pixel_delta_u.mult_f64((@as(f64, @floatFromInt(i)) + offset.x));
@@ -141,7 +141,7 @@ pub const Camera = struct {
         return self.center.add(self.defocus_disk_u.mult_f64(p.x)).add(self.defocus_disk_v.mult_f64(p.y));
     }
 
-    fn ray_color(self: Camera, ray: Ray, depth: i64, world: HittableList) Color {
+    fn ray_color(self: Camera, ray: Ray, depth: u32, world: HittableList) Color {
         // if we've exceeded the ray bounce limit, no more light is gathered
         if (depth <= 0) {
             return Color{};

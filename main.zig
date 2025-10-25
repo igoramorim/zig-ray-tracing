@@ -35,10 +35,10 @@ pub fn main() !void {
     const ground = Sphere.init(Point3{ .x = 0.0, .y = -1000.0, .z = 0.0 }, 1000.0, mat_ground);
     try world.add(Hittable{ .sphere = ground });
 
-    const it: i64 = 11;
-    var a: i64 = -it;
+    const it: i32 = 11;
+    var a: i32 = -it;
     while (a < it) : (a = a + 1) {
-        var b: i64 = -it;
+        var b: i32 = -it;
         while (b < it) : (b = b + 1) {
             const choose_mat = common.rand_f64_01();
 
