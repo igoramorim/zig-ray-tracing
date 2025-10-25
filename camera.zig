@@ -10,6 +10,7 @@ const Ray = @import("ray.zig").Ray;
 const HittableList = @import("hittable_list.zig").HittableList;
 const color = @import("color.zig");
 const Color = color.Color;
+const PPM = color.PPM;
 const HitRecord = @import("hittable.zig").HitRecord;
 const Interval = @import("interval.zig").Interval;
 
@@ -36,10 +37,11 @@ pub const Camera = struct {
     defocus_disk_u: Vec3 = undefined, // defocus disk horizontal radius
     defocus_disk_v: Vec3 = undefined, // defocus disk vertical radius
 
-    pub fn render(self: *Camera, world: HittableList) !void {
+    pub fn render(self: *Camera, allocator: std.mem.Allocator, world: HittableList) !void {
         self.initialize();
 
-        try stdout.print("P3\n{d} {d}\n255\n", .{ self.image_width, self.image_height });
+        var ppm = try PPM.init(allocator, @intCast(self.image_width), @intCast(self.image_height));
+        defer ppm.deinit();
 
         var j: i64 = 0;
         while (j < self.image_height) : (j = j + 1) {
@@ -56,10 +58,15 @@ pub const Camera = struct {
                     pixel_color = pixel_color.add(self.ray_color(ray, self.max_depth, world));
                 }
 
-                try color.write_color(pixel_color.mult_f64(self.pixel_samples_scale));
+                pixel_color = pixel_color.mult_f64(self.pixel_samples_scale);
+                const rgb = color.to_rgb(pixel_color);
+
+                const idx = i + j * self.image_width;
+                ppm.data[@intCast(idx)] = rgb;
             }
         }
 
+        try ppm.write_all();
         debug.print("done!\n", .{});
     }
 
@@ -70,7 +77,6 @@ pub const Camera = struct {
         if (self.image_height < 1) {
             self.image_height = 1;
         }
-        debug.print("width: {any} aspect radio: {any} height: {any}\n", .{ self.image_width, self.aspect_radio, self.image_height });
 
         self.pixel_samples_scale = 1.0 / @as(f64, @floatFromInt(self.samples_per_pixel));
 

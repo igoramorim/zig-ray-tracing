@@ -1,12 +1,11 @@
 const std = @import("std");
-const stdout = std.io.getStdOut().writer();
 
 const Vec3 = @import("vec3.zig").Vec3;
 const Interval = @import("interval.zig").Interval;
 
 pub const Color = Vec3;
 
-pub fn write_color(pixel_color: Color) !void {
+pub fn to_rgb(pixel_color: Color) RGB {
     // values in range 0.0 to 1.0
     var r: f64 = pixel_color.x;
     var g: f64 = pixel_color.y;
@@ -18,11 +17,15 @@ pub fn write_color(pixel_color: Color) !void {
 
     // values in range 0 to 255
     const intensity = Interval{ .min = 0.000, .max = 0.999 };
-    const rbyte: i64 = @as(i64, @intFromFloat(256 * intensity.clamp(r)));
-    const gbyte: i64 = @as(i64, @intFromFloat(256 * intensity.clamp(g)));
-    const bbyte: i64 = @as(i64, @intFromFloat(256 * intensity.clamp(b)));
+    const rbyte: u8 = @as(u8, @intFromFloat(256 * intensity.clamp(r)));
+    const gbyte: u8 = @as(u8, @intFromFloat(256 * intensity.clamp(g)));
+    const bbyte: u8 = @as(u8, @intFromFloat(256 * intensity.clamp(b)));
 
-    try stdout.print("{d} {d} {d}\n", .{ rbyte, gbyte, bbyte });
+    return RGB{
+        .r = rbyte,
+        .g = gbyte,
+        .b = bbyte,
+    };
 }
 
 pub fn linear_to_gamma(linear_component: f64) f64 {
@@ -31,3 +34,43 @@ pub fn linear_to_gamma(linear_component: f64) f64 {
     }
     return 0;
 }
+
+pub const RGB = struct {
+    r: u8,
+    g: u8,
+    b: u8,
+};
+
+pub const PPM = struct {
+    width: usize,
+    height: usize,
+    data: []RGB,
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator, width: usize, height: usize) !PPM {
+        return PPM{
+            .width = width,
+            .height = height,
+            .data = try allocator.alloc(RGB, width * height),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *PPM) void {
+        self.allocator.free(self.data);
+    }
+
+    pub fn write_all(self: PPM) !void {
+        const stdout = std.io.getStdOut().writer();
+
+        var bufwriter = std.io.bufferedWriter(stdout);
+        var bwriter = bufwriter.writer();
+
+        try bwriter.print("P3\n{d} {d}\n255\n", .{ self.width, self.height });
+        for (self.data) |pixel| {
+            try bwriter.print("{} {} {}\n", .{ pixel.r, pixel.g, pixel.b });
+        }
+
+        try bufwriter.flush();
+    }
+};

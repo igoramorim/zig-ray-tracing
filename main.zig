@@ -98,5 +98,5 @@ pub fn main() !void {
     cam.defocus_angle = 0.6;
     cam.focus_dist = 10.0;
 
-    try cam.render(world);
+    try cam.render(allocator, world);
 }
