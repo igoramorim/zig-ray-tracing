@@ -21,7 +21,12 @@ pub const Interval = struct {
         if (x > self.max) return self.max;
         return x;
     }
-};
 
-pub const empty: Interval = Interval{ .min = common.infinity, .max = -common.infinity };
-pub const universe: Interval = Interval{ .min = -common.infinity, .max = common.infinity };
+    pub fn empty() Interval {
+        return Interval{ .min = common.infinity, .max = -common.infinity };
+    }
+
+    pub fn universe() Interval {
+        return Interval{ .min = -common.infinity, .max = common.infinity };
+    }
+};
