@@ -38,11 +38,12 @@ pub const Camera = struct {
     defocus_disk_u: Vec3 = undefined, // defocus disk horizontal radius
     defocus_disk_v: Vec3 = undefined, // defocus disk vertical radius
 
-    pub fn render(self: *Camera, allocator: std.mem.Allocator, world: HittableList) !void {
+    pub fn render(self: *Camera, world: HittableList) !void {
         self.initialize();
 
-        var ppm = try PPM.init(allocator, @intCast(self.image_width), @intCast(self.image_height));
-        defer ppm.deinit();
+        var bufwriter = std.io.bufferedWriter(stdout);
+        var bwriter = bufwriter.writer();
+        try bwriter.print("P3\n{d} {d}\n255\n", .{ self.image_width, self.image_height });
 
         var j: u32 = 0;
         while (j < self.image_height) : (j = j + 1) {
@@ -60,14 +61,11 @@ pub const Camera = struct {
                 }
 
                 pixel_color *= f3(self.pixel_samples_scale);
-                const rgb = color.to_rgb(pixel_color);
-
-                const idx = i + j * self.image_width;
-                ppm.data[@intCast(idx)] = rgb;
+                try color.write(bwriter, pixel_color);
             }
         }
 
-        try ppm.write_all();
+        try bufwriter.flush();
         debug.print("done!\n", .{});
     }
 

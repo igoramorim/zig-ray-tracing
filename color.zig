@@ -5,7 +5,7 @@ const Interval = @import("interval.zig").Interval;
 
 pub const Color = Vec3;
 
-pub fn to_rgb(pixel_color: Color) RGB {
+pub fn write(writer: anytype, pixel_color: Color) !void {
     // values in range 0.0 to 1.0
     var r: f64 = pixel_color[0];
     var g: f64 = pixel_color[1];
@@ -21,11 +21,7 @@ pub fn to_rgb(pixel_color: Color) RGB {
     const gbyte: u8 = @as(u8, @intFromFloat(256 * intensity.clamp(g)));
     const bbyte: u8 = @as(u8, @intFromFloat(256 * intensity.clamp(b)));
 
-    return RGB{
-        .r = rbyte,
-        .g = gbyte,
-        .b = bbyte,
-    };
+    try writer.print("{} {} {}\n", .{ rbyte, gbyte, bbyte });
 }
 
 pub fn linear_to_gamma(linear_component: f64) f64 {
@@ -34,43 +30,3 @@ pub fn linear_to_gamma(linear_component: f64) f64 {
     }
     return 0;
 }
-
-pub const RGB = struct {
-    r: u8,
-    g: u8,
-    b: u8,
-};
-
-pub const PPM = struct {
-    width: usize,
-    height: usize,
-    data: []RGB,
-    allocator: std.mem.Allocator,
-
-    pub fn init(allocator: std.mem.Allocator, width: usize, height: usize) !PPM {
-        return PPM{
-            .width = width,
-            .height = height,
-            .data = try allocator.alloc(RGB, width * height),
-            .allocator = allocator,
-        };
-    }
-
-    pub fn deinit(self: *PPM) void {
-        self.allocator.free(self.data);
-    }
-
-    pub fn write_all(self: PPM) !void {
-        const stdout = std.io.getStdOut().writer();
-
-        var bufwriter = std.io.bufferedWriter(stdout);
-        var bwriter = bufwriter.writer();
-
-        try bwriter.print("P3\n{d} {d}\n255\n", .{ self.width, self.height });
-        for (self.data) |pixel| {
-            try bwriter.print("{} {} {}\n", .{ pixel.r, pixel.g, pixel.b });
-        }
-
-        try bufwriter.flush();
-    }
-};
