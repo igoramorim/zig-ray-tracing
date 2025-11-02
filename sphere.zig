@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const vec3 = @import("vec3.zig");
+const f3 = vec3.f3;
 const Vec3 = vec3.Vec3;
 const Point3 = vec3.Point3;
 const Material = @import("material.zig").Material;
@@ -16,7 +17,7 @@ pub const Sphere = struct {
     // stationary sphere
     pub fn init(center: Point3, radius: f64, mat: Material) Sphere {
         return Sphere{
-            .center = Ray{ .origin = center, .direction = Vec3{} },
+            .center = Ray{ .origin = center, .direction = Vec3{ 0.0, 0.0, 0.0 } },
             .radius = @max(0.0, radius),
             .mat = mat,
         };
@@ -25,7 +26,7 @@ pub const Sphere = struct {
     // moving sphere
     pub fn init_moving(center1: Point3, center2: Point3, radius: f64, mat: Material) Sphere {
         return Sphere{
-            .center = Ray{ .origin = center1, .direction = center2.sub(center1) },
+            .center = Ray{ .origin = center1, .direction = center2 - center1 },
             .radius = @max(0.0, radius),
             .mat = mat,
         };
@@ -33,10 +34,10 @@ pub const Sphere = struct {
 
     pub fn hit(self: Sphere, r: Ray, ray_t: Interval, rec: *HitRecord) bool {
         const current_center = self.center.at(r.time);
-        const oc: Vec3 = current_center.sub(r.origin);
-        const a: f64 = r.direction.length_squared();
+        const oc: Vec3 = current_center - r.origin;
+        const a: f64 = vec3.length_squared(r.direction);
         const h: f64 = vec3.dot(r.direction, oc);
-        const c: f64 = oc.length_squared() - (self.radius * self.radius);
+        const c: f64 = vec3.length_squared(oc) - (self.radius * self.radius);
 
         const discriminant: f64 = (h * h) - (a * c);
         if (discriminant < 0.0) {
@@ -55,7 +56,7 @@ pub const Sphere = struct {
 
         rec.t = root;
         rec.p = r.at(rec.t);
-        const outward_normal: Vec3 = rec.p.sub(current_center).div_f64(self.radius);
+        const outward_normal: Vec3 = (rec.p - current_center) / f3(self.radius);
         rec.set_face_normal(r, outward_normal);
         rec.mat = self.mat;
 

@@ -1,5 +1,7 @@
 const Point3 = @import("vec3.zig").Point3;
-const Vec3 = @import("vec3.zig").Vec3;
+const vec3 = @import("vec3.zig");
+const f3 = vec3.f3;
+const Vec3 = vec3.Vec3;
 
 pub const Ray = struct {
     origin: Point3,
@@ -7,6 +9,6 @@ pub const Ray = struct {
     time: f64 = 0,
 
     pub fn at(self: Ray, t: f64) Point3 {
-        return self.direction.mult_f64(t).add(self.origin);
+        return self.origin + f3(t) * self.direction;
     }
 };

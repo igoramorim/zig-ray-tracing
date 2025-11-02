@@ -8,7 +8,7 @@ All (almost) commits have the .ppm file the code at that point generate.
 
 Build (zig 0.14.1)
 ```bash
-zig build-exe main.zig
+zig build-exe main.zig -O ReleaseFast
 ```
 
 Run

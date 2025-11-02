@@ -7,9 +7,9 @@ pub const Color = Vec3;
 
 pub fn to_rgb(pixel_color: Color) RGB {
     // values in range 0.0 to 1.0
-    var r: f64 = pixel_color.x;
-    var g: f64 = pixel_color.y;
-    var b: f64 = pixel_color.z;
+    var r: f64 = pixel_color[0];
+    var g: f64 = pixel_color[1];
+    var b: f64 = pixel_color[2];
 
     r = linear_to_gamma(r);
     g = linear_to_gamma(g);

@@ -17,8 +17,8 @@ pub const Hittable = union(enum) {
 };
 
 pub const HitRecord = struct {
-    p: Point3 = Point3{},
-    normal: Vec3 = Vec3{},
+    p: Point3 = Point3{ 0.0, 0.0, 0.0 },
+    normal: Vec3 = Vec3{ 0.0, 0.0, 0.0 },
     mat: Material = undefined,
     t: f64 = undefined,
     front_face: bool = undefined,
@@ -33,7 +33,7 @@ pub const HitRecord = struct {
             self.normal = outward_normal;
         } else {
             // ray is inside the geometry
-            self.normal = outward_normal.reverse();
+            self.normal = -outward_normal;
         }
     }
 };
