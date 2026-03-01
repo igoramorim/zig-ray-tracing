@@ -47,7 +47,7 @@ pub const Camera = struct {
 
         var j: u32 = 0;
         while (j < self.image_height) : (j = j + 1) {
-            debug.print("scan lines remaining: {d}\n", .{(self.image_height - j)});
+            debug.print("\x1b[2K\rscan lines remaining: {d}", .{(self.image_height - j)});
 
             var i: u32 = 0;
             while (i < self.image_width) : (i = i + 1) {
