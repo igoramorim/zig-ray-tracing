@@ -11,14 +11,14 @@ const Color = color.Color;
 const interval = @import("interval.zig");
 const Interval = interval.Interval;
 const Hittable = @import("hittable.zig").Hittable;
-const Sphere = @import("sphere.zig").Sphere;
+const Sphere = @import("hittable.zig").Sphere;
 const material = @import("material.zig");
 const Lambertian = material.Lambertian;
 const Metal = material.Metal;
 const Dielectric = material.Dielectric;
 const Ray = @import("ray.zig").Ray;
 const HitRecord = @import("hittable.zig").HitRecord;
-const HittableList = @import("hittable_list.zig").HittableList;
+const HittableList = @import("hittable.zig").HittableList;
 const Camera = @import("camera.zig").Camera;
 
 pub fn main() !void {
