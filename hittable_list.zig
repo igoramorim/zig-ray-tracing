@@ -6,6 +6,8 @@ const Ray = @import("ray.zig").Ray;
 const Interval = @import("interval.zig").Interval;
 
 pub const HittableList = struct {
+    const Self = @This();
+
     objects: std.ArrayList(Hittable),
 
     pub fn init(allocator: std.mem.Allocator) HittableList {
@@ -20,7 +22,16 @@ pub const HittableList = struct {
         try self.objects.append(obj);
     }
 
-    pub fn hit(self: HittableList, r: Ray, ray_t: Interval, rec: *HitRecord) bool {
+    pub fn hittable(self: *const HittableList) Hittable {
+        return Hittable{
+            .ptr = self,
+            .hit_fn = hit,
+        };
+    }
+
+    pub fn hit(ptr: *const anyopaque, r: Ray, ray_t: Interval, rec: *HitRecord) bool {
+        const self: *const Self = @ptrCast(@alignCast(ptr));
+
         var temp_rec = HitRecord{};
         var hit_anything = false;
         var closest_so_far = ray_t.max;

@@ -8,26 +8,34 @@ const Color = @import("color.zig").Color;
 const Ray = @import("ray.zig").Ray;
 const HitRecord = @import("hittable.zig").HitRecord;
 
-pub const Material = union(enum) {
-    lamertian: Lambertian,
-    metal: Metal,
-    dielectric: Dielectric,
+pub const Material = struct {
+    ptr: *const anyopaque,
+    scatter_fn: *const fn (ptr: *const anyopaque, ray_in: Ray, rec: HitRecord, attenuation: *Color, scattered: *Ray) bool,
 
     pub fn scatter(self: Material, ray_in: Ray, rec: HitRecord, attenuation: *Color, scattered: *Ray) bool {
-        switch (self) {
-            inline else => |mat| return mat.scatter(ray_in, rec, attenuation, scattered),
-        }
+        return self.scatter_fn(self.ptr, ray_in, rec, attenuation, scattered);
     }
 };
 
 pub const Lambertian = struct {
+    const Self = @This();
+
     albedo: Color,
 
     pub fn init(albedo: Color) Lambertian {
         return Lambertian{ .albedo = albedo };
     }
 
-    pub fn scatter(self: Lambertian, ray_in: Ray, rec: HitRecord, attenuation: *Color, scattered: *Ray) bool {
+    pub fn mat(self: *const Lambertian) Material {
+        return Material{
+            .ptr = self,
+            .scatter_fn = scatter,
+        };
+    }
+
+    pub fn scatter(ptr: *const anyopaque, ray_in: Ray, rec: HitRecord, attenuation: *Color, scattered: *Ray) bool {
+        const self: *const Self = @ptrCast(@alignCast(ptr));
+
         var scatter_direction: Vec3 = rec.normal + vec3.rand_unit_vector();
 
         // catch degenerate scatter direction
@@ -42,6 +50,8 @@ pub const Lambertian = struct {
 };
 
 pub const Metal = struct {
+    const Self = @This();
+
     albedo: Color,
     fuzz: f64,
 
@@ -49,7 +59,16 @@ pub const Metal = struct {
         return Metal{ .albedo = albedo, .fuzz = if (fuzz > 1.0) 1.0 else fuzz };
     }
 
-    pub fn scatter(self: Metal, ray_in: Ray, rec: HitRecord, attenuation: *Color, scattered: *Ray) bool {
+    pub fn mat(self: *const Metal) Material {
+        return Material{
+            .ptr = self,
+            .scatter_fn = scatter,
+        };
+    }
+
+    pub fn scatter(ptr: *const anyopaque, ray_in: Ray, rec: HitRecord, attenuation: *Color, scattered: *Ray) bool {
+        const self: *const Self = @ptrCast(@alignCast(ptr));
+
         var reflected = vec3.reflect(ray_in.direction, rec.normal);
         reflected = vec3.unit_vector(reflected) + (f3(self.fuzz) * vec3.rand_unit_vector());
         scattered.* = Ray{ .origin = rec.p, .direction = reflected, .time = ray_in.time };
@@ -59,11 +78,22 @@ pub const Metal = struct {
 };
 
 pub const Dielectric = struct {
+    const Self = @This();
+
     // refractive index in vacuum or air, or the ratio of the material's refractive index over
     // the refractive index of the enclosing media
     refractionIndex: f64,
 
-    pub fn scatter(self: Dielectric, ray_in: Ray, rec: HitRecord, attenuation: *Color, scattered: *Ray) bool {
+    pub fn mat(self: *const Dielectric) Material {
+        return Material{
+            .ptr = self,
+            .scatter_fn = scatter,
+        };
+    }
+
+    pub fn scatter(ptr: *const anyopaque, ray_in: Ray, rec: HitRecord, attenuation: *Color, scattered: *Ray) bool {
+        const self: *const Self = @ptrCast(@alignCast(ptr));
+
         // attenuation 1 means the glass surface absorbs nothing
         attenuation.* = Color{ 1.0, 1.0, 1.0 };
         const ri = if (rec.front_face) (1.0 / self.refractionIndex) else self.refractionIndex;

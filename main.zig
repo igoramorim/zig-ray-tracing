@@ -13,7 +13,6 @@ const Interval = interval.Interval;
 const Hittable = @import("hittable.zig").Hittable;
 const Sphere = @import("sphere.zig").Sphere;
 const material = @import("material.zig");
-const Material = material.Material;
 const Lambertian = material.Lambertian;
 const Metal = material.Metal;
 const Dielectric = material.Dielectric;
@@ -24,16 +23,20 @@ const Camera = @import("camera.zig").Camera;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
+    const gpa_allocator = gpa.allocator();
     defer _ = gpa.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
 
-    const mat_ground = Material{ .lamertian = Lambertian.init(Color{ 0.5, 0.5, 0.5 }) };
-    const ground = Sphere.init(Point3{ 0.0, -1000.0, 0.0 }, 1000.0, mat_ground);
-    try world.add(Hittable{ .sphere = ground });
+    const mat_ground = Lambertian.init(Color{ 0.5, 0.5, 0.5 });
+    const ground = Sphere.init(Point3{ 0.0, -1000.0, 0.0 }, 1000.0, mat_ground.mat());
+    try world.add(ground.hittable());
 
     const it: i32 = 11;
     var a: i32 = -it;
@@ -52,38 +55,44 @@ pub fn main() !void {
                 if (choose_mat < 0.8) {
                     // diffuse
                     const albedo = vec3.rand_01() * vec3.rand_01();
-                    const mat = Material{ .lamertian = Lambertian.init(albedo) };
+                    const mat = try allocator.create(Lambertian);
+                    mat.* = Lambertian.init(albedo);
                     const center2 = center + Vec3{ 0.0, common.rand_f64(0.0, 0.5), 0.0 };
-                    const sphere = Sphere.init_moving(center, center2, 0.2, mat);
-                    try world.add(Hittable{ .sphere = sphere });
+                    const sphere = try allocator.create(Sphere);
+                    sphere.* = Sphere.init_moving(center, center2, 0.2, mat.mat());
+                    try world.add(sphere.hittable());
                 } else if (choose_mat < 0.95) {
                     // metal
                     const albedo = vec3.rand(0.5, 1.0);
                     const fuzz = common.rand_f64(0.0, 0.5);
-                    const mat = Metal.init(albedo, fuzz);
-                    const sphere = Sphere.init(center, 0.2, Material{ .metal = mat });
-                    try world.add(Hittable{ .sphere = sphere });
+                    const mat = try allocator.create(Metal);
+                    mat.* = Metal.init(albedo, fuzz);
+                    const sphere = try allocator.create(Sphere);
+                    sphere.* = Sphere.init(center, 0.2, mat.mat());
+                    try world.add(sphere.hittable());
                 } else {
                     // glass
-                    const mat = Dielectric{ .refractionIndex = 1.5 };
-                    const sphere = Sphere.init(center, 0.2, Material{ .dielectric = mat });
-                    try world.add(Hittable{ .sphere = sphere });
+                    const mat = try allocator.create(Dielectric);
+                    mat.* = Dielectric{ .refractionIndex = 1.5 };
+                    const sphere = try allocator.create(Sphere);
+                    sphere.* = Sphere.init(center, 0.2, mat.mat());
+                    try world.add(sphere.hittable());
                 }
             }
         }
     }
 
-    const mat_glass = Material{ .dielectric = Dielectric{ .refractionIndex = 1.5 } };
-    const sphere_glass = Sphere.init(Point3{ 0.0, 1.0, 0.0 }, 1.0, mat_glass);
-    try world.add(Hittable{ .sphere = sphere_glass });
+    const mat_glass = Dielectric{ .refractionIndex = 1.5 };
+    const sphere_glass = Sphere.init(Point3{ 0.0, 1.0, 0.0 }, 1.0, mat_glass.mat());
+    try world.add(sphere_glass.hittable());
 
-    const mat_diffuse = Material{ .lamertian = Lambertian.init(Color{ 0.4, 0.2, 0.1 }) };
-    const sphere_diffuse = Sphere.init(Point3{ -4.0, 1.0, 0.0 }, 1.0, mat_diffuse);
-    try world.add(Hittable{ .sphere = sphere_diffuse });
+    const mat_diffuse = Lambertian.init(Color{ 0.4, 0.2, 0.1 });
+    const sphere_diffuse = Sphere.init(Point3{ -4.0, 1.0, 0.0 }, 1.0, mat_diffuse.mat());
+    try world.add(sphere_diffuse.hittable());
 
-    const mat_metal = Material{ .metal = Metal.init(Color{ 0.7, 0.6, 0.5 }, 0.0) };
-    const sphere_metal = Sphere.init(Point3{ 4.0, 1.0, 0.0 }, 1.0, mat_metal);
-    try world.add(Hittable{ .sphere = sphere_metal });
+    const mat_metal = Metal.init(Color{ 0.7, 0.6, 0.5 }, 0.0);
+    const sphere_metal = Sphere.init(Point3{ 4.0, 1.0, 0.0 }, 1.0, mat_metal.mat());
+    try world.add(sphere_metal.hittable());
 
     // camera
     var cam = Camera{};
@@ -98,5 +107,5 @@ pub fn main() !void {
     cam.defocus_angle = 0.6;
     cam.focus_dist = 10.0;
 
-    try cam.render(world);
+    try cam.render(world.hittable());
 }

@@ -8,7 +8,7 @@ const Vec3 = vec3.Vec3;
 const f3 = vec3.f3;
 const common = @import("common.zig");
 const Ray = @import("ray.zig").Ray;
-const HittableList = @import("hittable_list.zig").HittableList;
+const Hittable = @import("hittable.zig").Hittable;
 const color = @import("color.zig");
 const Color = color.Color;
 const PPM = color.PPM;
@@ -38,7 +38,7 @@ pub const Camera = struct {
     defocus_disk_u: Vec3 = undefined, // defocus disk horizontal radius
     defocus_disk_v: Vec3 = undefined, // defocus disk vertical radius
 
-    pub fn render(self: *Camera, world: HittableList) !void {
+    pub fn render(self: *Camera, world: Hittable) !void {
         self.initialize();
 
         var bufwriter = std.io.bufferedWriter(stdout);
@@ -141,7 +141,7 @@ pub const Camera = struct {
         return self.center + (f3(p[0]) * self.defocus_disk_u) + (f3(p[1]) * self.defocus_disk_v);
     }
 
-    fn ray_color(self: Camera, ray: Ray, depth: u32, world: HittableList) Color {
+    fn ray_color(self: Camera, ray: Ray, depth: u32, world: Hittable) Color {
         // if we've exceeded the ray bounce limit, no more light is gathered
         if (depth <= 0) {
             return Color{ 0.0, 0.0, 0.0 };

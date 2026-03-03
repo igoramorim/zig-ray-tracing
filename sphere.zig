@@ -8,8 +8,11 @@ const Material = @import("material.zig").Material;
 const Ray = @import("ray.zig").Ray;
 const Interval = @import("interval.zig").Interval;
 const HitRecord = @import("hittable.zig").HitRecord;
+const Hittable = @import("hittable.zig").Hittable;
 
 pub const Sphere = struct {
+    const Self = @This();
+
     center: Ray,
     radius: f64,
     mat: Material = undefined,
@@ -32,7 +35,16 @@ pub const Sphere = struct {
         };
     }
 
-    pub fn hit(self: Sphere, r: Ray, ray_t: Interval, rec: *HitRecord) bool {
+    pub fn hittable(self: *const Sphere) Hittable {
+        return Hittable{
+            .ptr = self,
+            .hit_fn = hit,
+        };
+    }
+
+    pub fn hit(ptr: *const anyopaque, r: Ray, ray_t: Interval, rec: *HitRecord) bool {
+        const self: *const Self = @ptrCast(@alignCast(ptr));
+
         const current_center = self.center.at(r.time);
         const oc: Vec3 = current_center - r.origin;
         const a: f64 = vec3.length_squared(r.direction);

@@ -6,13 +6,12 @@ const Ray = @import("ray.zig").Ray;
 const Interval = @import("interval.zig").Interval;
 const Sphere = @import("sphere.zig").Sphere;
 
-pub const Hittable = union(enum) {
-    sphere: Sphere,
+pub const Hittable = struct {
+    ptr: *const anyopaque,
+    hit_fn: *const fn (ptr: *const anyopaque, r: Ray, rayT: Interval, rec: *HitRecord) bool,
 
     pub fn hit(self: Hittable, r: Ray, rayT: Interval, rec: *HitRecord) bool {
-        switch (self) {
-            inline else => |obj| return obj.hit(r, rayT, rec),
-        }
+        return self.hit_fn(self.ptr, r, rayT, rec);
     }
 };
 
