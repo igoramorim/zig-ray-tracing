@@ -21,6 +21,8 @@ const HitRecord = @import("hittable.zig").HitRecord;
 const HittableList = @import("hittable.zig").HittableList;
 const Camera = @import("camera.zig").Camera;
 const BVHNode = @import("hittable.zig").BVHNode;
+const texture = @import("texture.zig");
+const Checker = texture.Checker;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -35,7 +37,9 @@ pub fn main() !void {
     var world = HittableList.init(allocator);
     defer world.clear();
 
-    const mat_ground = Lambertian.init(Color{ 0.5, 0.5, 0.5 });
+    const tex_checker = try allocator.create(Checker);
+    tex_checker.* = try Checker.init_color(allocator, 0.32, vec3.rand_01() * vec3.rand_01(), Color{ 0.9, 0.9, 0.9 });
+    const mat_ground = Lambertian.init_texture(tex_checker.texture());
     const ground = Sphere.init(Point3{ 0.0, -1000.0, 0.0 }, 1000.0, mat_ground.mat());
     try world.add(ground.hittable());
 
@@ -57,7 +61,7 @@ pub fn main() !void {
                     // diffuse
                     const albedo = vec3.rand_01() * vec3.rand_01();
                     const mat = try allocator.create(Lambertian);
-                    mat.* = Lambertian.init(albedo);
+                    mat.* = try Lambertian.init(allocator, albedo);
                     const center2 = center + Vec3{ 0.0, common.rand_f64(0.0, 0.5), 0.0 };
                     const sphere = try allocator.create(Sphere);
                     sphere.* = Sphere.init_moving(center, center2, 0.2, mat.mat());
@@ -87,7 +91,7 @@ pub fn main() !void {
     const sphere_glass = Sphere.init(Point3{ 0.0, 1.0, 0.0 }, 1.0, mat_glass.mat());
     try world.add(sphere_glass.hittable());
 
-    const mat_diffuse = Lambertian.init(Color{ 0.4, 0.2, 0.1 });
+    const mat_diffuse = try Lambertian.init(allocator, Color{ 0.4, 0.2, 0.1 });
     const sphere_diffuse = Sphere.init(Point3{ -4.0, 1.0, 0.0 }, 1.0, mat_diffuse.mat());
     try world.add(sphere_diffuse.hittable());
 

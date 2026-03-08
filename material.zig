@@ -7,6 +7,9 @@ const common = @import("common.zig");
 const Color = @import("color.zig").Color;
 const Ray = @import("ray.zig").Ray;
 const HitRecord = @import("hittable.zig").HitRecord;
+const texture = @import("texture.zig");
+const Texture = texture.Texture;
+const SolidColor = texture.SolidColor;
 
 pub const Material = struct {
     ptr: *const anyopaque,
@@ -20,10 +23,16 @@ pub const Material = struct {
 pub const Lambertian = struct {
     const Self = @This();
 
-    albedo: Color,
+    tex: Texture,
 
-    pub fn init(albedo: Color) Lambertian {
-        return Lambertian{ .albedo = albedo };
+    pub fn init(allocator: std.mem.Allocator, albedo: Color) !Lambertian {
+        const tex_color = try allocator.create(SolidColor);
+        tex_color.* = SolidColor.init(albedo);
+        return Lambertian{ .tex = tex_color.texture() };
+    }
+
+    pub fn init_texture(tex: Texture) Lambertian {
+        return Lambertian{ .tex = tex };
     }
 
     pub fn mat(self: *const Lambertian) Material {
@@ -44,7 +53,7 @@ pub const Lambertian = struct {
         }
 
         scattered.* = Ray{ .origin = rec.p, .direction = scatter_direction, .time = ray_in.time };
-        attenuation.* = self.albedo;
+        attenuation.* = self.tex.value(rec.u, rec.v, rec.p);
         return true;
     }
 };

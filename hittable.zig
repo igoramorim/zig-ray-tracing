@@ -15,6 +15,8 @@ pub const HitRecord = struct {
     mat: Material = undefined,
     t: f64 = undefined,
     front_face: bool = undefined,
+    u: f64 = undefined,
+    v: f64 = undefined,
 
     pub fn set_face_normal(self: *HitRecord, r: Ray, outward_normal: Vec3) void {
         // sets the hit record normal vector
