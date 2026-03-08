@@ -20,6 +20,7 @@ const Ray = @import("ray.zig").Ray;
 const HitRecord = @import("hittable.zig").HitRecord;
 const HittableList = @import("hittable.zig").HittableList;
 const Camera = @import("camera.zig").Camera;
+const BVHNode = @import("hittable.zig").BVHNode;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -94,6 +95,8 @@ pub fn main() !void {
     const sphere_metal = Sphere.init(Point3{ 4.0, 1.0, 0.0 }, 1.0, mat_metal.mat());
     try world.add(sphere_metal.hittable());
 
+    const bvh = try BVHNode.init(allocator, world);
+
     // camera
     var cam = Camera{};
     cam.aspect_radio = 16.0 / 9.0;
@@ -107,5 +110,5 @@ pub fn main() !void {
     cam.defocus_angle = 0.6;
     cam.focus_dist = 10.0;
 
-    try cam.render(world.hittable());
+    try cam.render(bvh.hittable());
 }

@@ -4,6 +4,13 @@ pub const Interval = struct {
     min: f64 = common.infinity,
     max: f64 = -common.infinity,
 
+    pub fn init_from_intervals(a: Interval, b: Interval) Interval {
+        return Interval{
+            .min = if (a.min <= b.min) a.min else b.min,
+            .max = if (a.max >= b.max) a.max else b.max,
+        };
+    }
+
     pub fn size(self: Interval) f64 {
         return self.max - self.min;
     }

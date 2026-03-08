@@ -23,3 +23,11 @@ pub fn rand_f64_01() f64 {
 pub fn rand_f64(min: f64, max: f64) f64 {
     return min + (max - min) * rand_f64_01();
 }
+
+// returns a random integer in [min, max)
+pub fn rand_i64(min: i64, max: i64) i64 {
+    const fmin: f64 = @as(f64, @floatFromInt(min));
+    const fmax: f64 = @as(f64, @floatFromInt(max + 1));
+    const value = rand_f64(fmin, fmax);
+    return @as(i64, @intFromFloat(value));
+}
