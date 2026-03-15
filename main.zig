@@ -1,6 +1,5 @@
 const std = @import("std");
-const stdout = std.io.getStdOut().writer();
-const debug = std.debug;
+const stderr = std.io.getStdErr().writer();
 
 const vec3 = @import("vec3.zig");
 const Vec3 = vec3.Vec3;
@@ -25,6 +24,14 @@ const texture = @import("texture.zig");
 const Checker = texture.Checker;
 
 pub fn main() !void {
+    switch (2) {
+        1 => try bouncing_spheres(),
+        2 => try checkered_spheres(),
+        else => stderr.print("invalid scene\n", .{}),
+    }
+}
+
+fn bouncing_spheres() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const gpa_allocator = gpa.allocator();
     defer _ = gpa.deinit();
@@ -112,6 +119,47 @@ pub fn main() !void {
     cam.look_at = Point3{ 0.0, 0.0, 0.0 };
     cam.vup = Vec3{ 0.0, 1.0, 0.0 };
     cam.defocus_angle = 0.6;
+    cam.focus_dist = 10.0;
+
+    try cam.render(bvh.hittable());
+}
+
+fn checkered_spheres() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const gpa_allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // world
+    var world = HittableList.init(allocator);
+    defer world.clear();
+
+    const tex_checker = try allocator.create(Checker);
+    tex_checker.* = try Checker.init_color(allocator, 0.32, vec3.rand_01() * vec3.rand_01(), Color{ 0.9, 0.9, 0.9 });
+    const mat = Lambertian.init_texture(tex_checker.texture());
+
+    const sphere1 = Sphere.init(Point3{ 0.0, -10.0, 0.0 }, 10.0, mat.mat());
+    try world.add(sphere1.hittable());
+
+    const sphere2 = Sphere.init(Point3{ 0.0, 10.0, 0.0 }, 10.0, mat.mat());
+    try world.add(sphere2.hittable());
+
+    const bvh = try BVHNode.init(allocator, world);
+
+    // camera
+    var cam = Camera{};
+    cam.aspect_radio = 16.0 / 9.0;
+    cam.image_width = 400;
+    cam.samples_per_pixel = 100;
+    cam.max_depth = 50;
+    cam.vfov = 20;
+    cam.look_from = Point3{ 13.0, 2.0, 3.0 };
+    cam.look_at = Point3{ 0.0, 0.0, 0.0 };
+    cam.vup = Vec3{ 0.0, 1.0, 0.0 };
+    cam.defocus_angle = 0.0;
     cam.focus_dist = 10.0;
 
     try cam.render(bvh.hittable());
