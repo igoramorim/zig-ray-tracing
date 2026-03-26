@@ -66,7 +66,7 @@ pub const Camera = struct {
         }
 
         try bufwriter.flush();
-        debug.print("done!\n", .{});
+        debug.print("\x1b[2K\rdone!\n", .{});
     }
 
     fn initialize(self: *Camera) void {

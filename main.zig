@@ -22,11 +22,13 @@ const Camera = @import("camera.zig").Camera;
 const BVHNode = @import("hittable.zig").BVHNode;
 const texture = @import("texture.zig");
 const Checker = texture.Checker;
+const Image = texture.Image;
 
 pub fn main() !void {
-    switch (2) {
+    switch (3) {
         1 => try bouncing_spheres(),
         2 => try checkered_spheres(),
+        3 => try earth(),
         else => stderr.print("invalid scene\n", .{}),
     }
 }
@@ -157,6 +159,44 @@ fn checkered_spheres() !void {
     cam.max_depth = 50;
     cam.vfov = 20;
     cam.look_from = Point3{ 13.0, 2.0, 3.0 };
+    cam.look_at = Point3{ 0.0, 0.0, 0.0 };
+    cam.vup = Vec3{ 0.0, 1.0, 0.0 };
+    cam.defocus_angle = 0.0;
+    cam.focus_dist = 10.0;
+
+    try cam.render(bvh.hittable());
+}
+
+fn earth() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const gpa_allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // world
+    var world = HittableList.init(allocator);
+    defer world.clear();
+
+    const tex_earth = try allocator.create(Image);
+    tex_earth.* = try Image.init(allocator, "assets/textures/earth.jpg");
+    const mat = Lambertian.init_texture(tex_earth.texture());
+
+    const globe = Sphere.init(Point3{ 0.0, 0.0, 0.0 }, 2.0, mat.mat());
+    try world.add(globe.hittable());
+
+    const bvh = try BVHNode.init(allocator, world);
+
+    // camera
+    var cam = Camera{};
+    cam.aspect_radio = 16.0 / 9.0;
+    cam.image_width = 400;
+    cam.samples_per_pixel = 100;
+    cam.max_depth = 50;
+    cam.vfov = 20;
+    cam.look_from = Point3{ 0.0, 0.0, 12.0 };
     cam.look_at = Point3{ 0.0, 0.0, 0.0 };
     cam.vup = Vec3{ 0.0, 1.0, 0.0 };
     cam.defocus_angle = 0.0;

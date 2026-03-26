@@ -13,6 +13,13 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    exe.addIncludePath(std.Build.LazyPath{ .cwd_relative = "external" });
+    exe.linkLibC();
+    exe.addCSourceFiles(.{
+        .files = &[_][]const u8{"external/stb_image.c"},
+        .flags = &[_][]const u8{"-g"},
+    });
+
     b.installArtifact(exe);
 
     const run_exe = b.addRunArtifact(exe);
