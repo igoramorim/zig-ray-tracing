@@ -23,15 +23,39 @@ const BVHNode = @import("hittable.zig").BVHNode;
 const texture = @import("texture.zig");
 const Checker = texture.Checker;
 const Image = texture.Image;
+const flags = @import("flags");
 
 pub fn main() !void {
-    switch (3) {
+    var args = std.process.args();
+
+    const scene_id = flags.parse(u8, &args, "scene") catch |err| {
+        try stderr.print("{any}: scene\n{s}\n", .{ err, help_msg });
+        std.process.exit(1);
+    };
+
+    switch (scene_id) {
         1 => try bouncing_spheres(),
         2 => try checkered_spheres(),
         3 => try earth(),
-        else => stderr.print("invalid scene\n", .{}),
+        else => try stderr.print("invalid scene\n{s}\n", .{help_msg}),
     }
 }
+
+const help_msg =
+    \\NAME
+    \\  zrt - renders a scene using Ray Tracing and outputs it in ppm3 format
+    \\
+    \\USAGE
+    \\  zrt [FLAGS] > image.ppm
+    \\
+    \\FLAGS
+    \\  -scene [id] - specifies wich scene to render
+    \\
+    \\Avaiable scenes:
+    \\  1 Bouncing Spheres
+    \\  2 Checkered Spheres
+    \\  3 Earth (texture)
+;
 
 fn bouncing_spheres() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};

@@ -13,6 +13,12 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    const flags_module = b.addModule(
+        "flags",
+        .{ .root_source_file = std.Build.LazyPath{ .cwd_relative = "internal/flags.zig" } },
+    );
+    exe.root_module.addImport("flags", flags_module);
+
     exe.addIncludePath(std.Build.LazyPath{ .cwd_relative = "external" });
     exe.linkLibC();
     exe.addCSourceFiles(.{
@@ -21,9 +27,4 @@ pub fn build(b: *std.Build) void {
     });
 
     b.installArtifact(exe);
-
-    const run_exe = b.addRunArtifact(exe);
-
-    const run_step = b.step("run", "run the app");
-    run_step.dependOn(&run_exe.step);
 }
