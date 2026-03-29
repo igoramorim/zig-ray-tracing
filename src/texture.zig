@@ -2,8 +2,10 @@ const std = @import("std");
 
 const Color = @import("color.zig").Color;
 const Point3 = @import("vec3.zig").Point3;
+const f3 = @import("vec3.zig").f3;
 const ImageLoader = @import("image_loader.zig").ImageLoader;
 const Interval = @import("interval.zig").Interval;
+const Perlin = @import("perlin.zig").Perlin;
 
 pub const Texture = struct {
     ptr: *const anyopaque,
@@ -127,5 +129,27 @@ pub const Image = struct {
             @as(f64, @floatFromInt(pixel[2])),
         };
         return color_scale * color_pixel;
+    }
+};
+
+pub const Noise = struct {
+    const Self = @This();
+
+    perlin: Perlin,
+
+    pub fn init() Noise {
+        return Noise{ .perlin = Perlin.init() };
+    }
+
+    pub fn texture(self: *const Noise) Texture {
+        return Texture{
+            .ptr = self,
+            .value_fn = value,
+        };
+    }
+
+    pub fn value(ptr: *const anyopaque, _: f64, _: f64, p: Point3) Color {
+        const self: *const Self = @ptrCast(@alignCast(ptr));
+        return Color{ 1.0, 1.0, 1.0 } * f3(self.perlin.noise(p));
     }
 };
