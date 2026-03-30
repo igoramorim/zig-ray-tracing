@@ -42,9 +42,12 @@ pub const Perlin = struct {
     }
 
     pub fn noise(self: Perlin, p: Point3) f64 {
-        const u: f64 = p[0] - @floor(p[0]);
-        const v: f64 = p[1] - @floor(p[1]);
-        const w: f64 = p[2] - @floor(p[2]);
+        var u: f64 = p[0] - @floor(p[0]);
+        var v: f64 = p[1] - @floor(p[1]);
+        var w: f64 = p[2] - @floor(p[2]);
+        u = u * u * (3 - 2 * u);
+        v = v * v * (3 - 2 * v);
+        w = w * w * (3 - 2 * w);
 
         const i = @as(i32, @intFromFloat(@floor(p[0])));
         const j = @as(i32, @intFromFloat(@floor(p[1])));
