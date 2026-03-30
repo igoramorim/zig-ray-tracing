@@ -245,7 +245,7 @@ fn perlin_spheres() !void {
     var world = HittableList.init(allocator);
     defer world.clear();
 
-    const tex_perlin = Noise.init();
+    const tex_perlin = Noise.init(4.0);
     const mat = Lambertian.init_texture(tex_perlin.texture());
 
     const sphere1 = Sphere.init(Point3{ 0.0, -1000.0, 0.0 }, 1000.0, mat.mat());

@@ -136,9 +136,13 @@ pub const Noise = struct {
     const Self = @This();
 
     perlin: Perlin,
+    scale: f64,
 
-    pub fn init() Noise {
-        return Noise{ .perlin = Perlin.init() };
+    pub fn init(scale: f64) Noise {
+        return Noise{
+            .perlin = Perlin.init(),
+            .scale = scale,
+        };
     }
 
     pub fn texture(self: *const Noise) Texture {
@@ -150,6 +154,6 @@ pub const Noise = struct {
 
     pub fn value(ptr: *const anyopaque, _: f64, _: f64, p: Point3) Color {
         const self: *const Self = @ptrCast(@alignCast(ptr));
-        return Color{ 1.0, 1.0, 1.0 } * f3(self.perlin.noise(p));
+        return Color{ 1.0, 1.0, 1.0 } * f3(self.perlin.noise(p * f3(self.scale)));
     }
 };
