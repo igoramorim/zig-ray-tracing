@@ -96,4 +96,19 @@ pub const Perlin = struct {
 
         return accum;
     }
+
+    pub fn turbulence(self: Perlin, p: Point3, depth: i32) f64 {
+        const udepth: usize = @intCast(depth);
+        var accum: f64 = 0;
+        var temp_p = p;
+        var weight: f64 = 1.0;
+
+        for (0..udepth) |_| {
+            accum += weight * self.noise(temp_p);
+            weight *= 0.5;
+            temp_p = temp_p * f3(2);
+        }
+
+        return @abs(accum);
+    }
 };
