@@ -154,6 +154,6 @@ pub const Noise = struct {
 
     pub fn value(ptr: *const anyopaque, _: f64, _: f64, p: Point3) Color {
         const self: *const Self = @ptrCast(@alignCast(ptr));
-        return Color{ 1.0, 1.0, 1.0 } * f3(self.perlin.noise(p * f3(self.scale)));
+        return Color{ 1.0, 1.0, 1.0 } * f3(0.5) * f3(1.0 + self.perlin.noise(p * f3(self.scale)));
     }
 };
