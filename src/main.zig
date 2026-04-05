@@ -25,6 +25,10 @@ const Checker = texture.Checker;
 const Image = texture.Image;
 const flags = @import("flags");
 const Noise = texture.Noise;
+const Quad = @import("hittable.zig").Quad;
+
+// TODO:
+// - Remove the hittable() material() methods. Add an attr that holds it and it is initialized in init()
 
 pub fn main() !void {
     var args = std.process.args();
@@ -39,6 +43,7 @@ pub fn main() !void {
         2 => try checkered_spheres(),
         3 => try earth(),
         4 => try perlin_spheres(),
+        5 => try quads(),
         else => try stderr.print("invalid scene\n{s}\n", .{help_msg}),
     }
 }
@@ -58,6 +63,7 @@ const help_msg =
     \\  2 Checkered Spheres
     \\  3 Earth (texture)
     \\  4 Perlin Spheres
+    \\  5 Quads
 ;
 
 fn bouncing_spheres() !void {
@@ -263,6 +269,60 @@ fn perlin_spheres() !void {
     cam.max_depth = 50;
     cam.vfov = 20;
     cam.look_from = Point3{ 13.0, 2.0, 3.0 };
+    cam.look_at = Point3{ 0.0, 0.0, 0.0 };
+    cam.vup = Vec3{ 0.0, 1.0, 0.0 };
+    cam.defocus_angle = 0.0;
+    cam.focus_dist = 10.0;
+
+    try cam.render(bvh.hittable());
+}
+
+fn quads() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const gpa_allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // world
+    var world = HittableList.init(allocator);
+    defer world.clear();
+
+    // materials
+    const red = try Lambertian.init(allocator, Color{ 1.0, 0.2, 0.2 });
+    const green = try Lambertian.init(allocator, Color{ 0.2, 1.0, 0.2 });
+    const blue = try Lambertian.init(allocator, Color{ 0.2, 0.2, 1.0 });
+    const orange = try Lambertian.init(allocator, Color{ 1.0, 0.5, 0.0 });
+    const teal = try Lambertian.init(allocator, Color{ 0.2, 0.8, 0.8 });
+
+    // quads
+    const left = Quad.init(Point3{ -3.0, -2.0, 5.0 }, Vec3{ 0.0, 0.0, -4.0 }, Vec3{ 0.0, 4.0, 0.0 }, red.mat());
+    try world.add(left.hittable());
+
+    const back = Quad.init(Point3{ -2.0, -2.0, 0.0 }, Vec3{ 4.0, 0.0, 0.0 }, Vec3{ 0.0, 4.0, 0.0 }, green.mat());
+    try world.add(back.hittable());
+
+    const right = Quad.init(Point3{ 3.0, -2.0, 1.0 }, Vec3{ 0.0, 0.0, 4.0 }, Vec3{ 0.0, 4.0, 0.0 }, blue.mat());
+    try world.add(right.hittable());
+
+    const upper = Quad.init(Point3{ -2.0, 3.0, 1.0 }, Vec3{ 4.0, 0.0, 0.0 }, Vec3{ 0.0, 0.0, 4.0 }, orange.mat());
+    try world.add(upper.hittable());
+
+    const lower = Quad.init(Point3{ -2.0, -3.0, 5.0 }, Vec3{ 4.0, 0.0, 0.0 }, Vec3{ 0.0, 0.0, -4.0 }, teal.mat());
+    try world.add(lower.hittable());
+
+    const bvh = try BVHNode.init(allocator, world);
+
+    // camera
+    var cam = Camera{};
+    cam.aspect_radio = 1.0;
+    cam.image_width = 400;
+    cam.samples_per_pixel = 100;
+    cam.max_depth = 50;
+    cam.vfov = 80;
+    cam.look_from = Point3{ 0.0, 0.0, 9.0 };
     cam.look_at = Point3{ 0.0, 0.0, 0.0 };
     cam.vup = Vec3{ 0.0, 1.0, 0.0 };
     cam.defocus_angle = 0.0;

@@ -209,15 +209,20 @@ pub const AABB = struct {
         const y = if (a[1] <= b[1]) Interval{ .min = a[1], .max = b[1] } else Interval{ .min = b[1], .max = a[1] };
         const z = if (a[2] <= b[2]) Interval{ .min = a[2], .max = b[2] } else Interval{ .min = b[2], .max = a[2] };
 
-        return AABB{ .x = x, .y = y, .z = z };
+        var aabb = AABB{ .x = x, .y = y, .z = z };
+        aabb.pad_to_minimums();
+
+        return aabb;
     }
 
     pub fn init_from_boxes(box0: AABB, box1: AABB) AABB {
-        return AABB{
+        var aabb = AABB{
             .x = Interval.init_from_intervals(box0.x, box1.x),
             .y = Interval.init_from_intervals(box0.y, box1.y),
             .z = Interval.init_from_intervals(box0.z, box1.z),
         };
+        aabb.pad_to_minimums();
+        return aabb;
     }
 
     pub fn empty() AABB {
@@ -266,6 +271,13 @@ pub const AABB = struct {
             return if (self.x.size() > self.z.size()) 0 else 2;
         }
         return if (self.y.size() > self.z.size()) 1 else 2;
+    }
+
+    fn pad_to_minimums(self: *AABB) void {
+        const delta: f32 = 0.0001;
+        if (self.x.size() < delta) self.x = self.x.expand(delta);
+        if (self.y.size() < delta) self.y = self.y.expand(delta);
+        if (self.z.size() < delta) self.z = self.z.expand(delta);
     }
 };
 
@@ -345,6 +357,96 @@ pub const BVHNode = struct {
         const hit_right = self.right.hit(r, Interval{ .min = ray_t.min, .max = new_max }, rec);
 
         return hit_left or hit_right;
+    }
+
+    pub fn bounding_box(ptr: *const anyopaque) AABB {
+        const self: *const Self = @ptrCast(@alignCast(ptr));
+        return self.bbox;
+    }
+};
+
+pub const Quad = struct {
+    const Self = @This();
+
+    q: Point3 = undefined,
+    u: Vec3 = undefined,
+    v: Vec3 = undefined,
+    w: Vec3 = undefined,
+    mat: Material = undefined,
+    bbox: AABB = undefined,
+    normal: Vec3 = undefined,
+    d: f64 = undefined,
+
+    pub fn init(q: Point3, u: Vec3, v: Vec3, mat: Material) Quad {
+        var quad = Quad{
+            .q = q,
+            .u = u,
+            .v = v,
+            .mat = mat,
+        };
+
+        const n = vec3.cross(quad.u, quad.v);
+        quad.normal = vec3.unit_vector(n);
+        quad.d = vec3.dot(quad.normal, quad.q);
+        quad.w = n / f3(vec3.dot(n, n));
+
+        quad.set_bounding_box();
+
+        return quad;
+    }
+
+    fn set_bounding_box(self: *Quad) void {
+        const bbox_diagonal1 = AABB.init_from_points(self.q, self.q + self.u + self.v);
+        const bbox_diagonal2 = AABB.init_from_points(self.q + self.u, self.q + self.v);
+        self.bbox = AABB.init_from_boxes(bbox_diagonal1, bbox_diagonal2);
+    }
+
+    pub fn hittable(self: *const Quad) Hittable {
+        return Hittable{
+            .ptr = self,
+            .hit_fn = hit,
+            .bounding_box_fn = bounding_box,
+        };
+    }
+
+    pub fn hit(ptr: *const anyopaque, r: Ray, ray_t: Interval, rec: *HitRecord) bool {
+        const self: *const Self = @ptrCast(@alignCast(ptr));
+
+        const denom = vec3.dot(self.normal, r.direction);
+
+        // no hit if the ray is parallel to the plane
+        if (@abs(denom) < 1e-8) return false;
+
+        // return false if the hit point parameter t is outside the ray interval
+        const t: f64 = (self.d - vec3.dot(self.normal, r.origin)) / denom;
+        if (!ray_t.contains(t)) return false;
+
+        // determine if the hit point lies within the planar shape using its plane coordinates
+        const intersection = r.at(t);
+        const planar_hitp_vector = intersection - self.q;
+        const alpha = vec3.dot(self.w, vec3.cross(planar_hitp_vector, self.v));
+        const beta = vec3.dot(self.w, vec3.cross(self.u, planar_hitp_vector));
+
+        if (!is_interior(alpha, beta, rec)) return false;
+
+        // ray hits the 2D shape
+        rec.t = t;
+        rec.p = intersection;
+        rec.mat = self.mat;
+        rec.set_face_normal(r, self.normal);
+
+        return true;
+    }
+
+    fn is_interior(a: f64, b: f64, rec: *HitRecord) bool {
+        const unit_interval = Interval{ .min = 0, .max = 1 };
+
+        if (!unit_interval.contains(a) or !unit_interval.contains(b)) return false;
+
+        rec.u = a;
+        rec.v = b;
+
+        return true;
     }
 
     pub fn bounding_box(ptr: *const anyopaque) AABB {

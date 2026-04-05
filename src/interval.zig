@@ -36,4 +36,9 @@ pub const Interval = struct {
     pub fn universe() Interval {
         return Interval{ .min = -common.infinity, .max = common.infinity };
     }
+
+    pub fn expand(self: Interval, delta: f64) Interval {
+        const padding: f64 = delta / 2;
+        return Interval{ .min = self.min - padding, .max = self.max + padding };
+    }
 };
