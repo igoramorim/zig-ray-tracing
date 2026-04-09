@@ -26,9 +26,13 @@ const Image = texture.Image;
 const flags = @import("flags");
 const Noise = texture.Noise;
 const Quad = @import("hittable.zig").Quad;
+const DiffuseLight = @import("material.zig").DiffuseLight;
 
 // TODO:
-// - Remove the hittable() material() methods. Add an attr that holds it and it is initialized in init()
+// - (zig) Remove the hittable() material() methods. Add an attr that holds it and it is initialized in init()
+// - (zig) Parallelize
+// - Add other types of lights (directional and spot)
+// - Cast shadows
 
 pub fn main() !void {
     var args = std.process.args();
@@ -44,6 +48,7 @@ pub fn main() !void {
         3 => try earth(),
         4 => try perlin_spheres(),
         5 => try quads(),
+        6 => try diffuse_light(),
         else => try stderr.print("invalid scene\n{s}\n", .{help_msg}),
     }
 }
@@ -64,6 +69,7 @@ const help_msg =
     \\  3 Earth (texture)
     \\  4 Perlin Spheres
     \\  5 Quads
+    \\  6 Diffuse Light
 ;
 
 fn bouncing_spheres() !void {
@@ -327,6 +333,61 @@ fn quads() !void {
     cam.vup = Vec3{ 0.0, 1.0, 0.0 };
     cam.defocus_angle = 0.0;
     cam.focus_dist = 10.0;
+
+    try cam.render(bvh.hittable());
+}
+
+fn diffuse_light() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const gpa_allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // world
+    var world = HittableList.init(allocator);
+    defer world.clear();
+
+    const tex_checker = try allocator.create(Checker);
+    tex_checker.* = try Checker.init_color(allocator, 2.0, vec3.rand_01() * vec3.rand_01(), Color{ 0.9, 0.9, 0.9 });
+    const mat_checker = Lambertian.init_texture(tex_checker.texture());
+    const ground = Sphere.init(Point3{ 0.0, -1000.0, 0.0 }, 1000.0, mat_checker.mat());
+    try world.add(ground.hittable());
+
+    const tex_perlin = Noise.init(4.0);
+    const mat_pertlin = Lambertian.init_texture(tex_perlin.texture());
+    const sphere = Sphere.init(Point3{ 0.0, 2.0, 0.0 }, 2.0, mat_pertlin.mat());
+    try world.add(sphere.hittable());
+
+    const diff_light_red = try DiffuseLight.init_color(allocator, Color{ 4.0, 1.0, 1.0 });
+    const light_red = Quad.init(Point3{ 3.0, 1.0, -2.0 }, Vec3{ 2.0, 0.0, 0.0 }, Vec3{ 0.0, 2.0, 0.0 }, diff_light_red.mat());
+    try world.add(light_red.hittable());
+
+    const diff_light_green = try DiffuseLight.init_color(allocator, Color{ 1.0, 4.0, 1.0 });
+    const light_green = Quad.init(Point3{ 3.0, 1.0, 3.0 }, Vec3{ 2.0, 0.0, 0.0 }, Vec3{ 0.0, 2.0, 0.0 }, diff_light_green.mat());
+    try world.add(light_green.hittable());
+
+    const diff_light_blue = try DiffuseLight.init_color(allocator, Color{ 1.0, 1.0, 4.0 });
+    const light_blue = Sphere.init(Point3{ 0.0, 7.0, 0.0 }, 2.0, diff_light_blue.mat());
+    try world.add(light_blue.hittable());
+
+    const bvh = try BVHNode.init(allocator, world);
+
+    // camera
+    var cam = Camera{};
+    cam.aspect_radio = 16.0 / 9.0;
+    cam.image_width = 400;
+    cam.samples_per_pixel = 100;
+    cam.max_depth = 50;
+    cam.vfov = 20;
+    cam.look_from = Point3{ 20.0, 3.0, 6.0 };
+    cam.look_at = Point3{ 0.0, 2.0, 0.0 };
+    cam.vup = Vec3{ 0.0, 1.0, 0.0 };
+    cam.defocus_angle = 0.0;
+    cam.focus_dist = 10.0;
+    cam.background_color = Color{ 0.0, 0.0, 0.0 };
 
     try cam.render(bvh.hittable());
 }

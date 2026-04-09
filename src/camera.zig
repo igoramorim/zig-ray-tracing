@@ -37,6 +37,7 @@ pub const Camera = struct {
     focus_dist: f64 = 10, // distance from camera lookfrom point to plane of perfect focus
     defocus_disk_u: Vec3 = undefined, // defocus disk horizontal radius
     defocus_disk_v: Vec3 = undefined, // defocus disk vertical radius
+    background_color: Color = Color{ 0.70, 0.80, 1.0 },
 
     pub fn render(self: *Camera, world: Hittable) !void {
         self.initialize();
@@ -148,24 +149,21 @@ pub const Camera = struct {
         }
 
         var rec = HitRecord{};
-        if (world.hit(ray, Interval{ .min = 0.001, .max = common.infinity }, &rec)) {
-            var scattered: Ray = undefined;
-            var attenuation = Color{ 0.0, 0.0, 0.0 };
-
-            if (rec.mat.scatter(ray, rec, &attenuation, &scattered)) {
-                return attenuation * self.ray_color(scattered, depth - 1, world);
-            }
-
-            return Color{ 0.0, 0.0, 0.0 };
+        // if the ray hits nothing, returns the background color
+        if (!world.hit(ray, Interval{ .min = 0.001, .max = common.infinity }, &rec)) {
+            return self.background_color;
         }
 
-        // if ray does not hit anything, render a background gradiant linearly from blue to white
-        const unit_direction = vec3.unit_vector(ray.direction);
-        const a: f64 = 0.5 * (unit_direction[1] + 1.0);
+        var scattered: Ray = undefined;
+        var attenuation = Color{ 0.0, 0.0, 0.0 };
+        const color_from_emission = rec.mat.emitted(rec.u, rec.v, rec.p);
 
-        const white = Color{ 1.0, 1.0, 1.0 };
-        const blue = Color{ 0.5, 0.7, 1.0 };
+        if (!rec.mat.scatter(ray, rec, &attenuation, &scattered)) {
+            return color_from_emission;
+        }
 
-        return f3(1.0 - a) * white + f3(a) * blue;
+        const color_from_scatter = attenuation * self.ray_color(scattered, depth - 1, world);
+
+        return color_from_emission + color_from_scatter;
     }
 };
