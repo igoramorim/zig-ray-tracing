@@ -27,6 +27,7 @@ const flags = @import("flags");
 const Noise = texture.Noise;
 const Quad = @import("hittable.zig").Quad;
 const DiffuseLight = @import("material.zig").DiffuseLight;
+const Box = @import("hittable.zig").Box;
 
 // TODO:
 // - (zig) Remove the hittable() material() methods. Add an attr that holds it and it is initialized in init()
@@ -50,6 +51,7 @@ pub fn main() !void {
         5 => try quads(),
         6 => try diffuse_light(),
         7 => try empty_cornell_box(),
+        8 => try cornell_box(),
         else => try stderr.print("invalid scene\n{s}\n", .{help_msg}),
     }
 }
@@ -72,6 +74,7 @@ const help_msg =
     \\  5 Quads
     \\  6 Diffuse Light
     \\  7 Empty Cornell Box
+    \\  8 Cornell Box
 ;
 
 fn bouncing_spheres() !void {
@@ -429,6 +432,74 @@ fn empty_cornell_box() !void {
 
     const bottom = Quad.init(Point3{ 0.0, 0.0, 555.0 }, Vec3{ 555.0, 0.0, 0.0 }, Vec3{ 0.0, 555.0, 0.0 }, white.mat());
     try world.add(bottom.hittable());
+
+    const bvh = try BVHNode.init(allocator, world);
+
+    // camera
+    var cam = Camera{};
+    cam.aspect_radio = 1.0;
+    cam.image_width = 600;
+    cam.samples_per_pixel = 200;
+    cam.max_depth = 50;
+    cam.vfov = 40;
+    cam.look_from = Point3{ 278.0, 278.0, -800.0 };
+    cam.look_at = Point3{ 278.0, 278.0, 0.0 };
+    cam.vup = Vec3{ 0.0, 1.0, 0.0 };
+    cam.defocus_angle = 0.0;
+    cam.focus_dist = 10.0;
+    cam.background_color = Color{ 0.0, 0.0, 0.0 };
+
+    try cam.render(bvh.hittable());
+}
+
+fn cornell_box() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const gpa_allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // world
+    var world = HittableList.init(allocator);
+    defer world.clear();
+
+    // materials
+    const red = try Lambertian.init(allocator, Color{ 0.65, 0.05, 0.05 });
+    const white = try Lambertian.init(allocator, Color{ 0.73, 0.73, 0.73 });
+    const green = try Lambertian.init(allocator, Color{ 0.12, 0.45, 0.15 });
+    const light_mat = try DiffuseLight.init_color(allocator, Color{ 15.0, 15.0, 15.0 });
+
+    // walls
+    const left = Quad.init(Point3{ 555.0, 0.0, 0.0 }, Vec3{ 0.0, 555.0, 0.0 }, Vec3{ 0.0, 0.0, 555.0 }, green.mat());
+    try world.add(left.hittable());
+
+    const right = Quad.init(Point3{ 0.0, 0.0, 0.0 }, Vec3{ 0.0, 555.0, 0.0 }, Vec3{ 0.0, 0.0, 555.0 }, red.mat());
+    try world.add(right.hittable());
+
+    const light = Quad.init(Point3{ 343.0, 554.0, 332.0 }, Vec3{ -130.0, 0.0, 0.0 }, Vec3{ 0.0, 0.0, -105.0 }, light_mat.mat());
+    try world.add(light.hittable());
+
+    const center = Quad.init(Point3{ 0.0, 0.0, 0.0 }, Vec3{ 555.0, 0.0, 0.0 }, Vec3{ 0.0, 0.0, 555.0 }, white.mat());
+    try world.add(center.hittable());
+
+    const top = Quad.init(Point3{ 555.0, 555.0, 555.0 }, Vec3{ -555.0, 0.0, 0.0 }, Vec3{ 0.0, 0.0, -555.0 }, white.mat());
+    try world.add(top.hittable());
+
+    const bottom = Quad.init(Point3{ 0.0, 0.0, 555.0 }, Vec3{ 555.0, 0.0, 0.0 }, Vec3{ 0.0, 555.0, 0.0 }, white.mat());
+    try world.add(bottom.hittable());
+
+    // boxes
+    const box1_sides = Box(Point3{ 130.0, 0.0, 65.0 }, Point3{ 295.0, 165.0, 230.0 }, white.mat());
+    for (&box1_sides) |*side| {
+        try world.add(side.hittable());
+    }
+
+    const box2_sides = Box(Point3{ 265.0, 0.0, 295.0 }, Point3{ 430.0, 330.0, 460.0 }, white.mat());
+    for (&box2_sides) |*side| {
+        try world.add(side.hittable());
+    }
 
     const bvh = try BVHNode.init(allocator, world);
 

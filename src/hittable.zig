@@ -454,3 +454,33 @@ pub const Quad = struct {
         return self.bbox;
     }
 };
+
+/// Box returns the 3D box (six sides) that contains the two opposite vertices a and b
+pub fn Box(a: Point3, b: Point3, mat: Material) [6]Quad {
+    const min = Point3{
+        @min(a[0], b[0]),
+        @min(a[1], b[1]),
+        @min(a[2], b[2]),
+    };
+
+    const max = Point3{
+        @max(a[0], b[0]),
+        @max(a[1], b[1]),
+        @max(a[2], b[2]),
+    };
+
+    const dx = Vec3{ max[0] - min[0], 0.0, 0.0 };
+    const dy = Vec3{ 0.0, max[1] - min[1], 0.0 };
+    const dz = Vec3{ 0.0, 0.0, max[2] - min[2] };
+
+    var sides: [6]Quad = undefined;
+
+    sides[0] = Quad.init(Point3{ min[0], min[1], max[2] }, dx, dy, mat); // front
+    sides[1] = Quad.init(Point3{ max[0], min[1], max[2] }, -dz, dy, mat); //right
+    sides[2] = Quad.init(Point3{ max[0], min[1], min[2] }, -dx, dy, mat); // back
+    sides[3] = Quad.init(Point3{ min[0], min[1], min[2] }, dz, dy, mat); // left
+    sides[4] = Quad.init(Point3{ min[0], max[1], max[2] }, dx, -dz, mat); // top
+    sides[5] = Quad.init(Point3{ min[0], min[1], min[2] }, dx, dz, mat); // bottom
+
+    return sides;
+}
