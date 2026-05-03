@@ -41,4 +41,8 @@ pub const Interval = struct {
         const padding: f64 = delta / 2;
         return Interval{ .min = self.min - padding, .max = self.max + padding };
     }
+
+    pub fn add(self: Interval, displacement: f64) Interval {
+        return Interval{ .min = self.min + displacement, .max = self.max + displacement };
+    }
 };

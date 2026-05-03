@@ -28,12 +28,16 @@ const Noise = texture.Noise;
 const Quad = @import("hittable.zig").Quad;
 const DiffuseLight = @import("material.zig").DiffuseLight;
 const Box = @import("hittable.zig").Box;
+const RotateY = @import("hittable.zig").RotateY;
+const Translate = @import("hittable.zig").Translate;
 
 // TODO:
 // - (zig) Remove the hittable() material() methods. Add an attr that holds it and it is initialized in init()
 // - (zig) Parallelize
 // - Add other types of lights (directional and spot)
 // - Cast shadows
+// - Scale transformation
+// - Rotate in X and Z axis
 
 pub fn main() !void {
     var args = std.process.args();
@@ -491,15 +495,17 @@ fn cornell_box() !void {
     try world.add(bottom.hittable());
 
     // boxes
-    const box1_sides = Box(Point3{ 130.0, 0.0, 65.0 }, Point3{ 295.0, 165.0, 230.0 }, white.mat());
-    for (&box1_sides) |*side| {
-        try world.add(side.hittable());
-    }
+    var box1: Hittable = undefined;
+    box1 = Box.init(Point3{ 0.0, 0.0, 0.0 }, Point3{ 165.0, 330.0, 165.0 }, white.mat()).hittable();
+    box1 = RotateY.init(box1, 15.0).hittable();
+    box1 = Translate.init(box1, Vec3{ 265.0, 0.0, 295.0 }).hittable();
+    try world.add(box1);
 
-    const box2_sides = Box(Point3{ 265.0, 0.0, 295.0 }, Point3{ 430.0, 330.0, 460.0 }, white.mat());
-    for (&box2_sides) |*side| {
-        try world.add(side.hittable());
-    }
+    var box2: Hittable = undefined;
+    box2 = Box.init(Point3{ 0.0, 0.0, 0.0 }, Point3{ 165.0, 165.0, 165.0 }, white.mat()).hittable();
+    box2 = RotateY.init(box2, -18.0).hittable();
+    box2 = Translate.init(box2, Vec3{ 130.0, 0.0, 65.0 }).hittable();
+    try world.add(box2);
 
     const bvh = try BVHNode.init(allocator, world);
 

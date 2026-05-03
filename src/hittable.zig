@@ -279,6 +279,17 @@ pub const AABB = struct {
         if (self.y.size() < delta) self.y = self.y.expand(delta);
         if (self.z.size() < delta) self.z = self.z.expand(delta);
     }
+
+    pub fn add_vec3(self: AABB, offset: Vec3) AABB {
+        const x = self.x.add(offset[0]);
+        const y = self.x.add(offset[1]);
+        const z = self.x.add(offset[2]);
+
+        var aabb = AABB{ .x = x, .y = y, .z = z };
+        aabb.pad_to_minimums();
+
+        return aabb;
+    }
 };
 
 pub const BVHNode = struct {
@@ -455,32 +466,227 @@ pub const Quad = struct {
     }
 };
 
-/// Box returns the 3D box (six sides) that contains the two opposite vertices a and b
-pub fn Box(a: Point3, b: Point3, mat: Material) [6]Quad {
-    const min = Point3{
-        @min(a[0], b[0]),
-        @min(a[1], b[1]),
-        @min(a[2], b[2]),
-    };
+pub const Box = struct {
+    const Self = @This();
 
-    const max = Point3{
-        @max(a[0], b[0]),
-        @max(a[1], b[1]),
-        @max(a[2], b[2]),
-    };
+    sides: [6]Quad,
+    bbox: AABB,
 
-    const dx = Vec3{ max[0] - min[0], 0.0, 0.0 };
-    const dy = Vec3{ 0.0, max[1] - min[1], 0.0 };
-    const dz = Vec3{ 0.0, 0.0, max[2] - min[2] };
+    pub fn init(a: Point3, b: Point3, mat: Material) Box {
+        const min = Point3{
+            @min(a[0], b[0]),
+            @min(a[1], b[1]),
+            @min(a[2], b[2]),
+        };
 
-    var sides: [6]Quad = undefined;
+        const max = Point3{
+            @max(a[0], b[0]),
+            @max(a[1], b[1]),
+            @max(a[2], b[2]),
+        };
 
-    sides[0] = Quad.init(Point3{ min[0], min[1], max[2] }, dx, dy, mat); // front
-    sides[1] = Quad.init(Point3{ max[0], min[1], max[2] }, -dz, dy, mat); //right
-    sides[2] = Quad.init(Point3{ max[0], min[1], min[2] }, -dx, dy, mat); // back
-    sides[3] = Quad.init(Point3{ min[0], min[1], min[2] }, dz, dy, mat); // left
-    sides[4] = Quad.init(Point3{ min[0], max[1], max[2] }, dx, -dz, mat); // top
-    sides[5] = Quad.init(Point3{ min[0], min[1], min[2] }, dx, dz, mat); // bottom
+        const dx = Vec3{ max[0] - min[0], 0.0, 0.0 };
+        const dy = Vec3{ 0.0, max[1] - min[1], 0.0 };
+        const dz = Vec3{ 0.0, 0.0, max[2] - min[2] };
 
-    return sides;
-}
+        return Box{
+            .sides = .{
+                Quad.init(Point3{ min[0], min[1], max[2] }, dx, dy, mat), // front
+                Quad.init(Point3{ max[0], min[1], max[2] }, -dz, dy, mat), //right
+                Quad.init(Point3{ max[0], min[1], min[2] }, -dx, dy, mat), // back
+                Quad.init(Point3{ min[0], min[1], min[2] }, dz, dy, mat), // left
+                Quad.init(Point3{ min[0], max[1], max[2] }, dx, -dz, mat), // top
+                Quad.init(Point3{ min[0], min[1], min[2] }, dx, dz, mat), // bottom
+            },
+            .bbox = AABB.init_from_points(min, max),
+        };
+    }
+
+    pub fn hittable(self: *const Box) Hittable {
+        return Hittable{
+            .ptr = self,
+            .hit_fn = hit,
+            .bounding_box_fn = bounding_box,
+        };
+    }
+
+    pub fn hit(ptr: *const anyopaque, r: Ray, ray_t: Interval, rec: *HitRecord) bool {
+        const self: *const Self = @ptrCast(@alignCast(ptr));
+
+        var hit_anything = false;
+        var closes_so_far = ray_t.max;
+
+        for (&self.sides) |*side| {
+            if (side.hittable().hit(r, Interval{ .min = ray_t.min, .max = closes_so_far }, rec)) {
+                hit_anything = true;
+                closes_so_far = rec.t;
+            }
+        }
+
+        return hit_anything;
+    }
+
+    pub fn bounding_box(ptr: *const anyopaque) AABB {
+        const self: *const Self = @ptrCast(@alignCast(ptr));
+        return self.bbox;
+    }
+};
+
+pub const Translate = struct {
+    const Self = @This();
+
+    object: Hittable,
+    offset: Vec3,
+    bbox: AABB,
+
+    pub fn init(object: Hittable, offset: Vec3) Translate {
+        return Translate{
+            .object = object,
+            .offset = offset,
+            .bbox = object.bounding_box().add_vec3(offset),
+        };
+    }
+
+    pub fn hittable(self: *const Translate) Hittable {
+        return Hittable{
+            .ptr = self,
+            .hit_fn = hit,
+            .bounding_box_fn = bounding_box,
+        };
+    }
+
+    pub fn hit(ptr: *const anyopaque, r: Ray, ray_t: Interval, rec: *HitRecord) bool {
+        const self: *const Self = @ptrCast(@alignCast(ptr));
+
+        // move the ray backwards by the offset
+        const offset_ray = Ray{
+            .origin = r.origin - self.offset,
+            .direction = r.direction,
+            .time = r.time,
+        };
+
+        // determine whether an intersection exists along the offset ray (and if so, where)
+        if (!self.object.hit(offset_ray, ray_t, rec)) return false;
+
+        // move the intersection point forwards by the offset
+        rec.p += self.offset;
+
+        return true;
+    }
+
+    pub fn bounding_box(ptr: *const anyopaque) AABB {
+        const self: *const Self = @ptrCast(@alignCast(ptr));
+        return self.bbox;
+    }
+};
+
+pub const RotateY = struct {
+    const Self = @This();
+
+    object: Hittable,
+    sin_theta: f64,
+    cos_theta: f64,
+    bbox: AABB,
+
+    pub fn init(object: Hittable, angle: f64) RotateY {
+        const radians = common.deg_to_rad(angle);
+        const sin_theta = @sin(radians);
+        const cos_theta = @cos(radians);
+        const bbox = object.bounding_box();
+
+        var min = Point3{ common.infinity, common.infinity, common.infinity };
+        var max = Point3{ -common.infinity, -common.infinity, -common.infinity };
+
+        for (0..2) |ui| {
+            for (0..2) |uj| {
+                for (0..2) |uk| {
+                    const i: f64 = @floatFromInt(ui);
+                    const j: f64 = @floatFromInt(uj);
+                    const k: f64 = @floatFromInt(uk);
+
+                    const x: f64 = i * bbox.x.max + (1 - i) * bbox.x.min;
+                    const y: f64 = j * bbox.y.max + (1 - j) * bbox.y.min;
+                    const z: f64 = k * bbox.z.max + (1 - k) * bbox.z.min;
+
+                    const newx = cos_theta * x + sin_theta * z;
+                    const newz = -sin_theta * x + cos_theta * z;
+
+                    const tester = Vec3{ newx, y, newz };
+
+                    min = Point3{
+                        @min(min[0], tester[0]),
+                        @min(min[1], tester[1]),
+                        @min(min[2], tester[2]),
+                    };
+
+                    max = Point3{
+                        @max(max[0], tester[0]),
+                        @max(max[1], tester[1]),
+                        @max(max[2], tester[2]),
+                    };
+                }
+            }
+        }
+
+        return RotateY{
+            .object = object,
+            .sin_theta = sin_theta,
+            .cos_theta = cos_theta,
+            .bbox = AABB.init_from_points(min, max),
+        };
+    }
+
+    pub fn hittable(self: *const RotateY) Hittable {
+        return Hittable{
+            .ptr = self,
+            .hit_fn = hit,
+            .bounding_box_fn = bounding_box,
+        };
+    }
+
+    pub fn hit(ptr: *const anyopaque, r: Ray, ray_t: Interval, rec: *HitRecord) bool {
+        const self: *const Self = @ptrCast(@alignCast(ptr));
+
+        // transform the ray from world space to object space
+        const origin = Point3{
+            (self.cos_theta * r.origin[0]) - (self.sin_theta * r.origin[2]),
+            r.origin[1],
+            (self.sin_theta * r.origin[0]) + (self.cos_theta * r.origin[2]),
+        };
+
+        const direction = Vec3{
+            (self.cos_theta * r.direction[0]) - (self.sin_theta * r.direction[2]),
+            r.direction[1],
+            (self.sin_theta * r.direction[0]) + (self.cos_theta * r.direction[2]),
+        };
+
+        const rotated_ray = Ray{
+            .origin = origin,
+            .direction = direction,
+            .time = r.time,
+        };
+
+        // determine whether an intersection exists in object space (and if so, where)
+        if (!self.object.hit(rotated_ray, ray_t, rec)) return false;
+
+        // transform the intersection from object space back to world space
+        rec.p = Point3{
+            (self.cos_theta * rec.p[0]) + (self.sin_theta * rec.p[2]),
+            rec.p[1],
+            (-self.sin_theta * rec.p[0]) + (self.cos_theta * rec.p[2]),
+        };
+
+        rec.normal = Vec3{
+            (self.cos_theta * rec.normal[0]) + (self.sin_theta * rec.normal[2]),
+            rec.normal[1],
+            (-self.sin_theta * rec.normal[0]) + (self.cos_theta * rec.normal[2]),
+        };
+
+        return true;
+    }
+
+    pub fn bounding_box(ptr: *const anyopaque) AABB {
+        const self: *const Self = @ptrCast(@alignCast(ptr));
+        return self.bbox;
+    }
+};
