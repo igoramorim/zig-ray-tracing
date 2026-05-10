@@ -185,3 +185,42 @@ pub const DiffuseLight = struct {
         return false;
     }
 };
+
+pub const Isotropic = struct {
+    const Self = @This();
+
+    tex: Texture,
+
+    pub fn init_color(albedo: Color) Isotropic {
+        return Isotropic{
+            .tex = SolidColor.init(albedo).texture(),
+        };
+    }
+
+    pub fn init_tex(tex: Texture) Isotropic {
+        return Isotropic{
+            .tex = tex,
+        };
+    }
+
+    pub fn mat(self: *const Isotropic) Material {
+        return Material{
+            .ptr = self,
+            .scatter_fn = scatter,
+            .emitted_fn = emitted,
+        };
+    }
+
+    pub fn emitted(_: *const anyopaque, _: f64, _: f64, _: Point3) Color {
+        return Color{ 0.0, 0.0, 0.0 };
+    }
+
+    pub fn scatter(ptr: *const anyopaque, ray_in: Ray, rec: HitRecord, attenuation: *Color, scattered: *Ray) bool {
+        const self: *const Self = @ptrCast(@alignCast(ptr));
+
+        scattered.* = Ray{ .origin = rec.p, .direction = vec3.rand_unit_vector(), .time = ray_in.time };
+        attenuation.* = self.tex.value(rec.u, rec.v, rec.p);
+
+        return true;
+    }
+};

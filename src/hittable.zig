@@ -9,6 +9,10 @@ const Material = @import("material.zig").Material;
 const Ray = @import("ray.zig").Ray;
 const Interval = @import("interval.zig").Interval;
 const common = @import("common.zig");
+const Texture = @import("texture.zig").Texture;
+const Color = @import("color.zig").Color;
+const Isotropic = @import("material.zig").Isotropic;
+const SolidColor = @import("texture.zig").SolidColor;
 
 pub const HitRecord = struct {
     p: Point3 = Point3{ 0.0, 0.0, 0.0 },
@@ -688,5 +692,83 @@ pub const RotateY = struct {
     pub fn bounding_box(ptr: *const anyopaque) AABB {
         const self: *const Self = @ptrCast(@alignCast(ptr));
         return self.bbox;
+    }
+};
+
+pub const ConstantMedium = struct {
+    const Self = @This();
+
+    boundary: Hittable,
+    neg_inv_density: f64,
+    phase_function: Material,
+
+    pub fn init_texture(allocator: std.mem.Allocator, boundary: Hittable, density: f64, tex: Texture) !ConstantMedium {
+        const iso = try allocator.create(Isotropic);
+        iso.* = Isotropic.init_tex(tex);
+
+        return ConstantMedium{
+            .boundary = boundary,
+            .neg_inv_density = @as(f64, -1.0) / density,
+            .phase_function = iso.mat(),
+        };
+    }
+
+    pub fn init_color(allocator: std.mem.Allocator, boundary: Hittable, density: f64, albedo: Color) !ConstantMedium {
+        const tex = try allocator.create(SolidColor);
+        tex.* = SolidColor.init(albedo);
+
+        const iso = try allocator.create(Isotropic);
+        iso.* = Isotropic.init_tex(tex.texture());
+
+        return ConstantMedium{
+            .boundary = boundary,
+            .neg_inv_density = @as(f64, -1.0) / density,
+            .phase_function = iso.mat(),
+        };
+    }
+
+    pub fn hittable(self: *const ConstantMedium) Hittable {
+        return Hittable{
+            .ptr = self,
+            .hit_fn = hit,
+            .bounding_box_fn = bounding_box,
+        };
+    }
+
+    pub fn hit(ptr: *const anyopaque, r: Ray, ray_t: Interval, rec: *HitRecord) bool {
+        const self: *const Self = @ptrCast(@alignCast(ptr));
+
+        var rec1 = HitRecord{};
+        var rec2 = HitRecord{};
+
+        if (!self.boundary.hit(r, Interval.universe(), &rec1)) return false;
+
+        if (!self.boundary.hit(r, Interval{ .min = rec1.t + 0.0001, .max = common.infinity }, &rec2)) return false;
+
+        if (rec1.t < ray_t.min) rec1.t = ray_t.min;
+        if (rec2.t > ray_t.max) rec2.t = ray_t.max;
+
+        if (rec1.t >= rec2.t) return false;
+
+        if (rec1.t < 0) rec1.t = 0;
+
+        const ray_length = vec3.length(r.direction);
+        const distance_inside_boundary = (rec2.t - rec1.t) * ray_length;
+        const hit_distance = self.neg_inv_density * @log(common.rand_f64_01());
+
+        if (hit_distance > distance_inside_boundary) return false;
+
+        rec.t = rec1.t + hit_distance / ray_length;
+        rec.p = r.at(rec.t);
+        rec.normal = Vec3{ 1.0, 0.0, 0.0 };
+        rec.front_face = true;
+        rec.mat = self.phase_function;
+
+        return true;
+    }
+
+    pub fn bounding_box(ptr: *const anyopaque) AABB {
+        const self: *const Self = @ptrCast(@alignCast(ptr));
+        return self.boundary.bounding_box();
     }
 };
