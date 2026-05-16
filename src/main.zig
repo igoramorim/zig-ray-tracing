@@ -58,6 +58,7 @@ pub fn main() !void {
         7 => try empty_cornell_box(),
         8 => try cornell_box(),
         9 => try cornell_box_smoke(),
+        10 => try all_features(),
         else => try stderr.print("invalid scene\n{s}\n", .{help_msg}),
     }
 }
@@ -82,6 +83,7 @@ const help_msg =
     \\  7 Empty Cornell Box
     \\  8 Cornell Box
     \\  9 Cornell Box with Smoke
+    \\ 10 All features
 ;
 
 fn bouncing_spheres() !void {
@@ -592,6 +594,126 @@ fn cornell_box_smoke() !void {
     cam.max_depth = 50;
     cam.vfov = 40;
     cam.look_from = Point3{ 278.0, 278.0, -800.0 };
+    cam.look_at = Point3{ 278.0, 278.0, 0.0 };
+    cam.vup = Vec3{ 0.0, 1.0, 0.0 };
+    cam.defocus_angle = 0.0;
+    cam.focus_dist = 10.0;
+    cam.background_color = Color{ 0.0, 0.0, 0.0 };
+
+    try cam.render(bvh.hittable());
+}
+
+fn all_features() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const gpa_allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
+    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
+
+    // world
+    var world = HittableList.init(allocator);
+    defer world.clear();
+
+    // ground
+    var ground_boxes = HittableList.init(allocator);
+    const ground_mat = try Lambertian.init(allocator, Color{ 0.48, 0.83, 0.53 });
+    const boxes_per_side = 20;
+    for (0..boxes_per_side) |ui| {
+        for (0..boxes_per_side) |uj| {
+            const i = @as(f64, @floatFromInt(ui));
+            const j = @as(f64, @floatFromInt(uj));
+
+            const w: f64 = 100.0;
+            const x0: f64 = -1000.0 + i * w;
+            const z0: f64 = -1000.0 + j * w;
+            const y0: f64 = 0.0;
+            const x1: f64 = x0 + w;
+            const y1: f64 = common.rand_f64(1.0, 101.0);
+            const z1: f64 = z0 + w;
+
+            const box = try allocator.create(Box);
+            box.* = Box.init(Point3{ x0, y0, z0 }, Point3{ x1, y1, z1 }, ground_mat.mat());
+            try ground_boxes.add(box.hittable());
+        }
+    }
+    const ground_bvh = try BVHNode.init(allocator, ground_boxes);
+    try world.add(ground_bvh.hittable());
+
+    // light
+    const light_mat = try DiffuseLight.init_color(allocator, Color{ 7.0, 7.0, 7.0 });
+    const light = Quad.init(Point3{ 123.0, 554.0, 147.0 }, Vec3{ 300.0, 0.0, 0.0 }, Vec3{ 0.0, 0.0, 265.0 }, light_mat.mat());
+    try world.add(light.hittable());
+
+    // moving sphere
+    const center1 = Point3{ 400.0, 400.0, 200.0 };
+    const center2 = center1 + Point3{ 30.0, 0.0, 0.0 };
+    const moving_sphere_mat = try Lambertian.init(allocator, Color{ 0.7, 0.3, 0.1 });
+    const moving_sphere = Sphere.init_moving(center1, center2, 50.0, moving_sphere_mat.mat());
+    try world.add(moving_sphere.hittable());
+
+    // glass sphere
+    const glass_mat = Dielectric{ .refractionIndex = 1.5 };
+    const glass_sphere = Sphere.init(Point3{ 260.0, 150.0, 45.0 }, 50.0, glass_mat.mat());
+    try world.add(glass_sphere.hittable());
+
+    // metal sphere
+    const metal = Metal.init(Color{ 0.8, 0.8, 0.9 }, 1.0);
+    const sphere_metal = Sphere.init(Point3{ 0.0, 150.0, 145.0 }, 50.0, metal.mat());
+    try world.add(sphere_metal.hittable());
+
+    // really nice blue sphere
+    const boundary = Sphere.init(Point3{ 360.0, 150.0, 145.0 }, 70.0, glass_mat.mat());
+    try world.add(boundary.hittable());
+    const x = try ConstantMedium.init_color(allocator, boundary.hittable(), 0.2, Color{ 0.2, 0.4, 0.9 });
+    try world.add(x.hittable());
+
+    // fog
+    const fog_mat = Dielectric{ .refractionIndex = 1.5 };
+    const boundary_fog = Sphere.init(Point3{ 0.0, 0.0, 0.0 }, 5000.0, fog_mat.mat());
+    const fog = try ConstantMedium.init_color(allocator, boundary_fog.hittable(), 0.0001, Color{ 1.0, 1.0, 1.0 });
+    try world.add(fog.hittable());
+
+    // texture from image
+    const earth_img = try allocator.create(Image);
+    earth_img.* = try Image.init(allocator, "assets/textures/earth.jpg");
+    const earth_mat = Lambertian.init_texture(earth_img.texture());
+    const globe = Sphere.init(Point3{ 400.0, 200.0, 400.0 }, 100.0, earth_mat.mat());
+    try world.add(globe.hittable());
+
+    // noise
+    const noise_tex = Noise.init(0.2);
+    const noise_mat = Lambertian.init_texture(noise_tex.texture());
+    const sphere_noise = Sphere.init(Point3{ 220.0, 280.0, 300.0 }, 80.0, noise_mat.mat());
+    try world.add(sphere_noise.hittable());
+
+    // translation and rotation
+    const n = 1000;
+    var little_spheres = HittableList.init(allocator);
+    const white = try Lambertian.init(allocator, Color{ 0.73, 0.73, 0.73 });
+    for (0..n) |_| {
+        const sphere = try allocator.create(Sphere);
+        sphere.* = Sphere.init(vec3.rand(0.0, 165.0), 10.0, white.mat());
+        try little_spheres.add(sphere.hittable());
+    }
+
+    const bvh_little_spheres = try BVHNode.init(allocator, little_spheres);
+    var hittable_little_sphere: Hittable = undefined;
+    hittable_little_sphere = RotateY.init(bvh_little_spheres.hittable(), 15.0).hittable();
+    hittable_little_sphere = Translate.init(hittable_little_sphere, Vec3{ -100.0, 270.0, 395.0 }).hittable();
+    try world.add(hittable_little_sphere);
+
+    const bvh = try BVHNode.init(allocator, world);
+
+    // camera
+    var cam = Camera{};
+    cam.aspect_radio = 1.0;
+    cam.image_width = 400;
+    cam.samples_per_pixel = 250;
+    cam.max_depth = 4;
+    cam.vfov = 40;
+    cam.look_from = Point3{ 478.0, 278.0, -600.0 };
     cam.look_at = Point3{ 278.0, 278.0, 0.0 };
     cam.vup = Vec3{ 0.0, 1.0, 0.0 };
     cam.defocus_angle = 0.0;

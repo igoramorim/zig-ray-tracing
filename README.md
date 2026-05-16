@@ -52,3 +52,6 @@ The output is a image.ppm file. Most of OS opens it with an image visualizer.
 
 # 9: cornell box smoke
 ![](/images/9_cornell_box_smoke.png)
+
+# 10: final render: book two (all features)
+![](/images/10_all_features.png)
