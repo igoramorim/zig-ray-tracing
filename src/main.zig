@@ -23,7 +23,6 @@ const BVHNode = @import("hittable.zig").BVHNode;
 const texture = @import("texture.zig");
 const Checker = texture.Checker;
 const Image = texture.Image;
-const flags = @import("flags");
 const Noise = texture.Noise;
 const Quad = @import("hittable.zig").Quad;
 const DiffuseLight = @import("material.zig").DiffuseLight;
@@ -41,24 +40,33 @@ const ConstantMedium = @import("hittable.zig").ConstantMedium;
 // - Rotate in X and Z axis
 
 pub fn main() !void {
-    var args = std.process.args();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const gpa_allocator = gpa.allocator();
+    defer _ = gpa.deinit();
 
-    const scene_id = flags.parse(u8, &args, "scene") catch |err| {
-        try stderr.print("{any}: scene\n{s}\n", .{ err, help_msg });
-        std.process.exit(1);
-    };
+    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
+    defer arena.deinit();
+    const allocator = arena.allocator();
 
-    switch (scene_id) {
-        1 => try bouncing_spheres(),
-        2 => try checkered_spheres(),
-        3 => try earth(),
-        4 => try perlin_spheres(),
-        5 => try quads(),
-        6 => try diffuse_light(),
-        7 => try empty_cornell_box(),
-        8 => try cornell_box(),
-        9 => try cornell_box_smoke(),
-        10 => try all_features(),
+    var args = try std.process.argsWithAllocator(allocator);
+    defer args.deinit();
+
+    var opts = Opts{};
+    try read_opts(&args, &opts);
+
+    std.debug.print("width:{d} | samples per pixel:{d} | max depth:{d}\n", .{ opts.width, opts.samples_per_pixel, opts.max_depth });
+
+    switch (opts.scene.?) {
+        1 => try bouncing_spheres(allocator, opts),
+        2 => try checkered_spheres(allocator, opts),
+        3 => try earth(allocator, opts),
+        4 => try perlin_spheres(allocator, opts),
+        5 => try quads(allocator, opts),
+        6 => try diffuse_light(allocator, opts),
+        7 => try empty_cornell_box(allocator, opts),
+        8 => try cornell_box(allocator, opts),
+        9 => try cornell_box_smoke(allocator, opts),
+        10 => try all_features(allocator, opts),
         else => try stderr.print("invalid scene\n{s}\n", .{help_msg}),
     }
 }
@@ -71,7 +79,7 @@ const help_msg =
     \\  zrt [FLAGS] > image.ppm
     \\
     \\FLAGS
-    \\  -scene [id] - specifies wich scene to render
+    \\  --scene [id] - specifies wich scene to render
     \\
     \\Avaiable scenes:
     \\  1 Bouncing Spheres
@@ -84,17 +92,59 @@ const help_msg =
     \\  8 Cornell Box
     \\  9 Cornell Box with Smoke
     \\ 10 All features
+    \\
+    \\  --width [number] - specifies the width of the image. default is 400
+    \\
+    \\  --samples [number] - specifies the number of samples per pixel. default if 100
+    \\
+    \\  --depth [number] - specifies the maximum number of ray bounces into scene. default is 50
 ;
 
-fn bouncing_spheres() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const gpa_allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+const Opts = struct {
+    scene: ?u8 = null,
+    width: u32 = 400,
+    samples_per_pixel: u32 = 100,
+    max_depth: u32 = 50,
+};
 
-    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+fn read_opts(args: *std.process.ArgIterator, opts: *Opts) !void {
+    _ = args.skip(); // skip the executable name
 
+    while (args.next()) |arg| {
+        if (std.mem.eql(u8, arg, "--scene")) {
+            const val_str = args.next() orelse break;
+            opts.scene = std.fmt.parseInt(u8, val_str, 10) catch |err| {
+                try stderr.print("scene: {any}\n", .{err});
+                std.process.exit(1);
+            };
+        } else if (std.mem.eql(u8, arg, "--width")) {
+            const val_str = args.next() orelse break;
+            opts.width = std.fmt.parseInt(u32, val_str, 10) catch |err| {
+                try stderr.print("width: {any}\n", .{err});
+                std.process.exit(1);
+            };
+        } else if (std.mem.eql(u8, arg, "--samples")) {
+            const val_str = args.next() orelse break;
+            opts.samples_per_pixel = std.fmt.parseInt(u32, val_str, 10) catch |err| {
+                try stderr.print("samples: {any}\n", .{err});
+                std.process.exit(1);
+            };
+        } else if (std.mem.eql(u8, arg, "--depth")) {
+            const val_str = args.next() orelse break;
+            opts.max_depth = std.fmt.parseInt(u32, val_str, 10) catch |err| {
+                try stderr.print("depth: {any}\n", .{err});
+                std.process.exit(1);
+            };
+        }
+    }
+
+    if (opts.scene == null) {
+        try stderr.print("scene is required\n{s}\n", .{help_msg});
+        std.process.exit(1);
+    }
+}
+
+fn bouncing_spheres(allocator: std.mem.Allocator, opts: Opts) !void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -166,9 +216,9 @@ fn bouncing_spheres() !void {
     // camera
     var cam = Camera{};
     cam.aspect_radio = 16.0 / 9.0;
-    cam.image_width = 400;
-    cam.samples_per_pixel = 100;
-    cam.max_depth = 50;
+    cam.image_width = opts.width;
+    cam.samples_per_pixel = opts.samples_per_pixel;
+    cam.max_depth = opts.max_depth;
     cam.vfov = 20;
     cam.look_from = Point3{ 13.0, 2.0, 3.0 };
     cam.look_at = Point3{ 0.0, 0.0, 0.0 };
@@ -179,15 +229,7 @@ fn bouncing_spheres() !void {
     try cam.render(bvh.hittable());
 }
 
-fn checkered_spheres() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const gpa_allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
+fn checkered_spheres(allocator: std.mem.Allocator, opts: Opts) !void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -207,9 +249,9 @@ fn checkered_spheres() !void {
     // camera
     var cam = Camera{};
     cam.aspect_radio = 16.0 / 9.0;
-    cam.image_width = 400;
-    cam.samples_per_pixel = 100;
-    cam.max_depth = 50;
+    cam.image_width = opts.width;
+    cam.samples_per_pixel = opts.samples_per_pixel;
+    cam.max_depth = opts.max_depth;
     cam.vfov = 20;
     cam.look_from = Point3{ 13.0, 2.0, 3.0 };
     cam.look_at = Point3{ 0.0, 0.0, 0.0 };
@@ -220,15 +262,7 @@ fn checkered_spheres() !void {
     try cam.render(bvh.hittable());
 }
 
-fn earth() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const gpa_allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
+fn earth(allocator: std.mem.Allocator, opts: Opts) !void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -245,9 +279,9 @@ fn earth() !void {
     // camera
     var cam = Camera{};
     cam.aspect_radio = 16.0 / 9.0;
-    cam.image_width = 400;
-    cam.samples_per_pixel = 100;
-    cam.max_depth = 50;
+    cam.image_width = opts.width;
+    cam.samples_per_pixel = opts.samples_per_pixel;
+    cam.max_depth = opts.max_depth;
     cam.vfov = 20;
     cam.look_from = Point3{ 0.0, 0.0, 12.0 };
     cam.look_at = Point3{ 0.0, 0.0, 0.0 };
@@ -258,15 +292,7 @@ fn earth() !void {
     try cam.render(bvh.hittable());
 }
 
-fn perlin_spheres() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const gpa_allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
+fn perlin_spheres(allocator: std.mem.Allocator, opts: Opts) !void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -284,9 +310,9 @@ fn perlin_spheres() !void {
     // camera
     var cam = Camera{};
     cam.aspect_radio = 16.0 / 9.0;
-    cam.image_width = 400;
-    cam.samples_per_pixel = 100;
-    cam.max_depth = 50;
+    cam.image_width = opts.width;
+    cam.samples_per_pixel = opts.samples_per_pixel;
+    cam.max_depth = opts.max_depth;
     cam.vfov = 20;
     cam.look_from = Point3{ 13.0, 2.0, 3.0 };
     cam.look_at = Point3{ 0.0, 0.0, 0.0 };
@@ -297,15 +323,7 @@ fn perlin_spheres() !void {
     try cam.render(bvh.hittable());
 }
 
-fn quads() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const gpa_allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
+fn quads(allocator: std.mem.Allocator, opts: Opts) !void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -338,9 +356,9 @@ fn quads() !void {
     // camera
     var cam = Camera{};
     cam.aspect_radio = 1.0;
-    cam.image_width = 400;
-    cam.samples_per_pixel = 100;
-    cam.max_depth = 50;
+    cam.image_width = opts.width;
+    cam.samples_per_pixel = opts.samples_per_pixel;
+    cam.max_depth = opts.max_depth;
     cam.vfov = 80;
     cam.look_from = Point3{ 0.0, 0.0, 9.0 };
     cam.look_at = Point3{ 0.0, 0.0, 0.0 };
@@ -351,15 +369,7 @@ fn quads() !void {
     try cam.render(bvh.hittable());
 }
 
-fn diffuse_light() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const gpa_allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
+fn diffuse_light(allocator: std.mem.Allocator, opts: Opts) !void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -392,9 +402,9 @@ fn diffuse_light() !void {
     // camera
     var cam = Camera{};
     cam.aspect_radio = 16.0 / 9.0;
-    cam.image_width = 400;
-    cam.samples_per_pixel = 100;
-    cam.max_depth = 50;
+    cam.image_width = opts.width;
+    cam.samples_per_pixel = opts.samples_per_pixel;
+    cam.max_depth = opts.max_depth;
     cam.vfov = 20;
     cam.look_from = Point3{ 20.0, 3.0, 6.0 };
     cam.look_at = Point3{ 0.0, 2.0, 0.0 };
@@ -406,15 +416,7 @@ fn diffuse_light() !void {
     try cam.render(bvh.hittable());
 }
 
-fn empty_cornell_box() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const gpa_allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
+fn empty_cornell_box(allocator: std.mem.Allocator, opts: Opts) !void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -447,9 +449,9 @@ fn empty_cornell_box() !void {
     // camera
     var cam = Camera{};
     cam.aspect_radio = 1.0;
-    cam.image_width = 600;
-    cam.samples_per_pixel = 200;
-    cam.max_depth = 50;
+    cam.image_width = opts.width;
+    cam.samples_per_pixel = opts.samples_per_pixel;
+    cam.max_depth = opts.max_depth;
     cam.vfov = 40;
     cam.look_from = Point3{ 278.0, 278.0, -800.0 };
     cam.look_at = Point3{ 278.0, 278.0, 0.0 };
@@ -461,15 +463,7 @@ fn empty_cornell_box() !void {
     try cam.render(bvh.hittable());
 }
 
-fn cornell_box() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const gpa_allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
+fn cornell_box(allocator: std.mem.Allocator, opts: Opts) !void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -517,9 +511,9 @@ fn cornell_box() !void {
     // camera
     var cam = Camera{};
     cam.aspect_radio = 1.0;
-    cam.image_width = 600;
-    cam.samples_per_pixel = 200;
-    cam.max_depth = 50;
+    cam.image_width = opts.width;
+    cam.samples_per_pixel = opts.samples_per_pixel;
+    cam.max_depth = opts.max_depth;
     cam.vfov = 40;
     cam.look_from = Point3{ 278.0, 278.0, -800.0 };
     cam.look_at = Point3{ 278.0, 278.0, 0.0 };
@@ -531,15 +525,7 @@ fn cornell_box() !void {
     try cam.render(bvh.hittable());
 }
 
-fn cornell_box_smoke() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const gpa_allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
+fn cornell_box_smoke(allocator: std.mem.Allocator, opts: Opts) !void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -589,9 +575,9 @@ fn cornell_box_smoke() !void {
     // camera
     var cam = Camera{};
     cam.aspect_radio = 1.0;
-    cam.image_width = 600;
-    cam.samples_per_pixel = 200;
-    cam.max_depth = 50;
+    cam.image_width = opts.width;
+    cam.samples_per_pixel = opts.samples_per_pixel;
+    cam.max_depth = opts.max_depth;
     cam.vfov = 40;
     cam.look_from = Point3{ 278.0, 278.0, -800.0 };
     cam.look_at = Point3{ 278.0, 278.0, 0.0 };
@@ -603,15 +589,7 @@ fn cornell_box_smoke() !void {
     try cam.render(bvh.hittable());
 }
 
-fn all_features() !void {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const gpa_allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var arena = std.heap.ArenaAllocator.init(gpa_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
+fn all_features(allocator: std.mem.Allocator, opts: Opts) !void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -709,9 +687,9 @@ fn all_features() !void {
     // camera
     var cam = Camera{};
     cam.aspect_radio = 1.0;
-    cam.image_width = 400;
-    cam.samples_per_pixel = 250;
-    cam.max_depth = 4;
+    cam.image_width = opts.width;
+    cam.samples_per_pixel = opts.samples_per_pixel;
+    cam.max_depth = opts.max_depth;
     cam.vfov = 40;
     cam.look_from = Point3{ 478.0, 278.0, -600.0 };
     cam.look_at = Point3{ 278.0, 278.0, 0.0 };

@@ -18,7 +18,7 @@ Run for help
 
 Run a scene
 ```bash
-./zig-out/bin/zrt -scene=1 > image.ppm
+./zig-out/bin/zrt --scene 1 > image.ppm
 ```
 
 The output is a image.ppm file. Most of OS opens it with an image visualizer.
