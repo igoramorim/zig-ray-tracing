@@ -55,3 +55,6 @@ The output is a image.ppm file. Most of OS opens it with an image visualizer.
 
 # 10: final render: book two (all features)
 ![](/images/10_all_features.png)
+
+With width:800 samples per pixel:10000 max depth:40
+![](/images/10_all_features_high.png)
