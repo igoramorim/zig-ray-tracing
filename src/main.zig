@@ -226,7 +226,7 @@ fn bouncing_spheres(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.defocus_angle = 0.6;
     cam.focus_dist = 10.0;
 
-    try cam.render(bvh.hittable());
+    try cam.render(allocator, bvh.hittable());
 }
 
 fn checkered_spheres(allocator: std.mem.Allocator, opts: Opts) !void {
@@ -259,7 +259,7 @@ fn checkered_spheres(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.defocus_angle = 0.0;
     cam.focus_dist = 10.0;
 
-    try cam.render(bvh.hittable());
+    try cam.render(allocator, bvh.hittable());
 }
 
 fn earth(allocator: std.mem.Allocator, opts: Opts) !void {
@@ -289,7 +289,7 @@ fn earth(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.defocus_angle = 0.0;
     cam.focus_dist = 10.0;
 
-    try cam.render(bvh.hittable());
+    try cam.render(allocator, bvh.hittable());
 }
 
 fn perlin_spheres(allocator: std.mem.Allocator, opts: Opts) !void {
@@ -320,7 +320,7 @@ fn perlin_spheres(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.defocus_angle = 0.0;
     cam.focus_dist = 10.0;
 
-    try cam.render(bvh.hittable());
+    try cam.render(allocator, bvh.hittable());
 }
 
 fn quads(allocator: std.mem.Allocator, opts: Opts) !void {
@@ -366,7 +366,7 @@ fn quads(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.defocus_angle = 0.0;
     cam.focus_dist = 10.0;
 
-    try cam.render(bvh.hittable());
+    try cam.render(allocator, bvh.hittable());
 }
 
 fn diffuse_light(allocator: std.mem.Allocator, opts: Opts) !void {
@@ -413,7 +413,7 @@ fn diffuse_light(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.focus_dist = 10.0;
     cam.background_color = Color{ 0.0, 0.0, 0.0 };
 
-    try cam.render(bvh.hittable());
+    try cam.render(allocator, bvh.hittable());
 }
 
 fn empty_cornell_box(allocator: std.mem.Allocator, opts: Opts) !void {
@@ -460,7 +460,7 @@ fn empty_cornell_box(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.focus_dist = 10.0;
     cam.background_color = Color{ 0.0, 0.0, 0.0 };
 
-    try cam.render(bvh.hittable());
+    try cam.render(allocator, bvh.hittable());
 }
 
 fn cornell_box(allocator: std.mem.Allocator, opts: Opts) !void {
@@ -522,7 +522,7 @@ fn cornell_box(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.focus_dist = 10.0;
     cam.background_color = Color{ 0.0, 0.0, 0.0 };
 
-    try cam.render(bvh.hittable());
+    try cam.render(allocator, bvh.hittable());
 }
 
 fn cornell_box_smoke(allocator: std.mem.Allocator, opts: Opts) !void {
@@ -586,7 +586,7 @@ fn cornell_box_smoke(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.focus_dist = 10.0;
     cam.background_color = Color{ 0.0, 0.0, 0.0 };
 
-    try cam.render(bvh.hittable());
+    try cam.render(allocator, bvh.hittable());
 }
 
 fn all_features(allocator: std.mem.Allocator, opts: Opts) !void {
@@ -698,5 +698,5 @@ fn all_features(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.focus_dist = 10.0;
     cam.background_color = Color{ 0.0, 0.0, 0.0 };
 
-    try cam.render(bvh.hittable());
+    try cam.render(allocator, bvh.hittable());
 }
