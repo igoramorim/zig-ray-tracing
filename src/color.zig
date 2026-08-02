@@ -24,6 +24,13 @@ pub fn write(writer: anytype, pixel_color: Color) !void {
     try writer.print("{} {} {}\n", .{ rbyte, gbyte, bbyte });
 }
 
+pub fn to_byte(f: f64) u8 {
+    const corrected = linear_to_gamma(f);
+    const intensity = Interval{ .min = 0.000, .max = 0.999 };
+    const byte: u8 = @as(u8, @intFromFloat(256 * intensity.clamp(corrected)));
+    return byte;
+}
+
 pub fn linear_to_gamma(linear_component: f64) f64 {
     if (linear_component > 0) {
         return std.math.sqrt(linear_component);

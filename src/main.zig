@@ -31,6 +31,33 @@ const RotateY = @import("hittable.zig").RotateY;
 const Translate = @import("hittable.zig").Translate;
 const ConstantMedium = @import("hittable.zig").ConstantMedium;
 
+const zglfw = @import("zglfw");
+const zgui = @import("zgui");
+const zopengl = @import("zopengl");
+
+const width = 800;
+const height = 800;
+
+const default_samples_per_pixel = 30;
+const min_samples_per_pixel = 1;
+const max_samples_per_pixel = 10_000;
+
+const default_max_depth = 20;
+const min_max_depth = 1;
+const max_max_depth = 100;
+
+const default_fov = 20.0;
+const min_fov = 1.0;
+const max_fov = 90.0;
+
+const default_defocus_angle = 0.0;
+const min_defocus_angle = 0.0;
+const max_defocus_angle = 10.0;
+
+const default_focus_dist = 10.0;
+const min_focus_dist = 1.0;
+const max_focus_dist = 100.0;
+
 // TODO:
 // - (zig) Remove the hittable() material() methods. Add an attr that holds it and it is initialized in init()
 // - (zig) Parallelize
@@ -40,6 +67,27 @@ const ConstantMedium = @import("hittable.zig").ConstantMedium;
 // - Rotate in X and Z axis
 
 pub fn main() !void {
+    try zglfw.init();
+    defer zglfw.terminate();
+
+    const gl_major = 3;
+    const gl_minor = 3;
+    zglfw.windowHint(.context_version_major, gl_major);
+    zglfw.windowHint(.context_version_minor, gl_minor);
+    zglfw.windowHint(.opengl_profile, .opengl_core_profile);
+    zglfw.windowHint(.opengl_forward_compat, true);
+    zglfw.windowHint(.client_api, .opengl_api);
+    zglfw.windowHint(.resizable, false);
+
+    const window = try zglfw.Window.create(width, height, "zig ray tracer", null, null);
+    defer window.destroy();
+
+    zglfw.makeContextCurrent(window);
+    zglfw.swapInterval(1);
+
+    try zopengl.loadCoreProfile(zglfw.getProcAddress, gl_major, gl_minor);
+    const gl = zopengl.bindings;
+
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const gpa_allocator = gpa.allocator();
     defer _ = gpa.deinit();
@@ -48,103 +96,218 @@ pub fn main() !void {
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    var args = try std.process.argsWithAllocator(allocator);
-    defer args.deinit();
+    zgui.init(allocator);
+    defer zgui.deinit();
 
-    var opts = Opts{};
-    try read_opts(&args, &opts);
+    zgui.backend.init(window);
+    defer zgui.backend.deinit();
 
-    std.debug.print("width:{d} | samples per pixel:{d} | max depth:{d}\n", .{ opts.width, opts.samples_per_pixel, opts.max_depth });
-
-    switch (opts.scene.?) {
-        1 => try bouncing_spheres(allocator, opts),
-        2 => try checkered_spheres(allocator, opts),
-        3 => try earth(allocator, opts),
-        4 => try perlin_spheres(allocator, opts),
-        5 => try quads(allocator, opts),
-        6 => try diffuse_light(allocator, opts),
-        7 => try empty_cornell_box(allocator, opts),
-        8 => try cornell_box(allocator, opts),
-        9 => try cornell_box_smoke(allocator, opts),
-        10 => try all_features(allocator, opts),
-        else => try stderr.print("invalid scene\n{s}\n", .{help_msg}),
-    }
-}
-
-const help_msg =
-    \\NAME
-    \\  zrt - renders a scene using Ray Tracing and outputs it in ppm3 format
-    \\
-    \\USAGE
-    \\  zrt [FLAGS] > image.ppm
-    \\
-    \\FLAGS
-    \\  --scene [id] - specifies wich scene to render
-    \\
-    \\Avaiable scenes:
-    \\  1 Bouncing Spheres
-    \\  2 Checkered Spheres
-    \\  3 Earth (texture)
-    \\  4 Perlin Spheres
-    \\  5 Quads
-    \\  6 Diffuse Light
-    \\  7 Empty Cornell Box
-    \\  8 Cornell Box
-    \\  9 Cornell Box with Smoke
-    \\ 10 All features
-    \\
-    \\  --width [number] - specifies the width of the image. default is 400
-    \\
-    \\  --samples [number] - specifies the number of samples per pixel. default if 100
-    \\
-    \\  --depth [number] - specifies the maximum number of ray bounces into scene. default is 50
-;
-
-const Opts = struct {
-    scene: ?u8 = null,
-    width: u32 = 400,
-    samples_per_pixel: u32 = 100,
-    max_depth: u32 = 50,
-};
-
-fn read_opts(args: *std.process.ArgIterator, opts: *Opts) !void {
-    _ = args.skip(); // skip the executable name
-
-    while (args.next()) |arg| {
-        if (std.mem.eql(u8, arg, "--scene")) {
-            const val_str = args.next() orelse break;
-            opts.scene = std.fmt.parseInt(u8, val_str, 10) catch |err| {
-                try stderr.print("scene: {any}\n", .{err});
-                std.process.exit(1);
-            };
-        } else if (std.mem.eql(u8, arg, "--width")) {
-            const val_str = args.next() orelse break;
-            opts.width = std.fmt.parseInt(u32, val_str, 10) catch |err| {
-                try stderr.print("width: {any}\n", .{err});
-                std.process.exit(1);
-            };
-        } else if (std.mem.eql(u8, arg, "--samples")) {
-            const val_str = args.next() orelse break;
-            opts.samples_per_pixel = std.fmt.parseInt(u32, val_str, 10) catch |err| {
-                try stderr.print("samples: {any}\n", .{err});
-                std.process.exit(1);
-            };
-        } else if (std.mem.eql(u8, arg, "--depth")) {
-            const val_str = args.next() orelse break;
-            opts.max_depth = std.fmt.parseInt(u32, val_str, 10) catch |err| {
-                try stderr.print("depth: {any}\n", .{err});
-                std.process.exit(1);
-            };
+    const total_pixels: usize = width * height * 3; // RGB
+    var state = try State.init(allocator, total_pixels);
+    defer state.deinit();
+    var render_thread: ?std.Thread = null;
+    defer {
+        // make sure to cancel the render if the app is closed while rendering
+        if (render_thread) |thread| {
+            state.cancel_render.store(true, .monotonic);
+            thread.join();
         }
     }
 
-    if (opts.scene == null) {
-        try stderr.print("scene is required\n{s}\n", .{help_msg});
-        std.process.exit(1);
+    var tex_id: gl.Uint = 0;
+    gl.genTextures(1, &tex_id);
+    gl.bindTexture(gl.TEXTURE_2D, tex_id);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, width, height, 0, gl.RGB, gl.UNSIGNED_BYTE, null);
+    gl.bindTexture(gl.TEXTURE_2D, 0);
+
+    var framebuf_id: gl.Uint = 0;
+    gl.genFramebuffers(1, &framebuf_id);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, framebuf_id);
+    gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex_id, 0);
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, 0);
+
+    var opts = Opts{
+        .width = width,
+    };
+    var samples_per_pixel: i32 = default_samples_per_pixel;
+    var max_depth: i32 = default_max_depth;
+    var fov: f32 = default_fov;
+    var defocus_angle: f32 = default_defocus_angle;
+    var focus_dist: f32 = default_focus_dist;
+
+    var current_selection: ?usize = null;
+    const scenes_text = [_][:0]const u8{
+        "bouncing spheres",
+        "checkered spheres",
+        "earth",
+        "perlin spheres",
+        "quads",
+        "diffuse light",
+        "empty cornell box",
+        "cornell box",
+        "cornell box smoke",
+        "all features",
+    };
+
+    while (!window.shouldClose() and window.getKey(.escape) != .press) {
+        zglfw.pollEvents();
+
+        gl.bindTexture(gl.TEXTURE_2D, tex_id);
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGB, gl.UNSIGNED_BYTE, state.buffer.ptr);
+
+        gl.bindFramebuffer(gl.READ_FRAMEBUFFER, framebuf_id);
+        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, 0);
+        // destination height and width are swapped so OpenGL does not render upside down
+        gl.blitFramebuffer(0, 0, width, height, 0, height, width, 0, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+
+        const fb_size = window.getFramebufferSize();
+        zgui.backend.newFrame(@intCast(fb_size[0]), @intCast(fb_size[1]));
+
+        if (zgui.begin("Settings", .{})) {
+            const preview_text = if (current_selection != null)
+                scenes_text[current_selection.?]
+            else
+                "Choose a scene";
+
+            if (zgui.beginCombo("Scene", .{ .preview_value = preview_text })) {
+                defer zgui.endCombo();
+
+                for (scenes_text, 0..) |text, index| {
+                    const is_selected = (current_selection == index);
+                    if (zgui.selectable(text, .{ .selected = is_selected })) {
+                        current_selection = index;
+                    }
+                }
+            }
+
+            if (zgui.sliderInt("Samples per pixel", .{
+                .v = &samples_per_pixel,
+                .min = min_samples_per_pixel,
+                .max = max_samples_per_pixel,
+            })) {
+                opts.samples_per_pixel = @intCast(samples_per_pixel);
+            }
+
+            if (zgui.sliderInt("Max depth", .{
+                .v = &max_depth,
+                .min = min_max_depth,
+                .max = max_max_depth,
+            })) {
+                opts.max_depth = @intCast(max_depth);
+            }
+
+            if (zgui.sliderFloat("FOV", .{
+                .v = &fov,
+                .min = min_fov,
+                .max = max_fov,
+            })) {
+                opts.fov = @floatCast(fov);
+            }
+
+            if (zgui.sliderFloat("Defocus Angle", .{
+                .v = &defocus_angle,
+                .min = min_defocus_angle,
+                .max = max_defocus_angle,
+            })) {
+                opts.defocus_angle = @floatCast(defocus_angle);
+            }
+
+            if (zgui.sliderFloat("Focus Distance", .{
+                .v = &focus_dist,
+                .min = min_focus_dist,
+                .max = max_focus_dist,
+            })) {
+                opts.focus_dist = @floatCast(focus_dist);
+            }
+
+            if (zgui.button("Render", .{})) {
+                if (current_selection) |selection| {
+                    state.cancel_render.store(true, .monotonic); // cancels the current render
+
+                    if (render_thread) |thread| { // wait the thread finishes
+                        thread.join();
+                        render_thread = null;
+                    }
+
+                    @memset(state.buffer, 0); // clear the buffer
+                    state.cancel_render.store(false, .monotonic); // reset the cancel flag
+
+                    // start a new render
+                    state.lines_remaining = 0;
+                    const scene = get_scene_fn(selection);
+                    render_thread = try std.Thread.spawn(
+                        .{},
+                        scene_runner,
+                        .{ allocator, scene, opts, &state },
+                    );
+                }
+            }
+
+            zgui.text("Lines remaining: {d}", .{state.lines_remaining});
+        }
+        zgui.end();
+        zgui.backend.draw();
+
+        window.swapBuffers();
     }
 }
 
-fn bouncing_spheres(allocator: std.mem.Allocator, opts: Opts) !void {
+pub const State = struct {
+    allocator: std.mem.Allocator,
+    buffer: []u8,
+    cancel_render: std.atomic.Value(bool),
+    lines_remaining: u32 = 0,
+
+    pub fn init(allocator: std.mem.Allocator, total_pixels: usize) !State {
+        const buffer = try allocator.alloc(u8, total_pixels);
+        @memset(buffer, 0); // clear the buffer
+
+        return .{
+            .allocator = allocator,
+            .buffer = buffer,
+            .cancel_render = std.atomic.Value(bool).init(false),
+        };
+    }
+
+    pub fn deinit(self: *State) void {
+        self.allocator.free(self.buffer);
+    }
+};
+
+const scene_fn = *const fn (allocator: std.mem.Allocator, opts: Opts, state: *State) anyerror!void;
+
+fn scene_runner(allocator: std.mem.Allocator, scene: scene_fn, opts: Opts, state: *State) anyerror!void {
+    try scene(allocator, opts, state);
+}
+
+fn get_scene_fn(id: usize) scene_fn {
+    switch (id) {
+        0 => return &bouncing_spheres,
+        1 => return &checkered_spheres,
+        2 => return &earth,
+        3 => return &perlin_spheres,
+        4 => return &quads,
+        5 => return &diffuse_light,
+        6 => return &empty_cornell_box,
+        7 => return &cornell_box,
+        8 => return &cornell_box_smoke,
+        9 => return &all_features,
+        else => unreachable,
+    }
+}
+
+const Opts = struct {
+    width: u32 = width,
+    samples_per_pixel: u32 = default_samples_per_pixel,
+    max_depth: u32 = default_max_depth,
+    fov: f64 = default_fov,
+    defocus_angle: f64 = default_defocus_angle,
+    focus_dist: f64 = default_focus_dist,
+};
+
+fn bouncing_spheres(allocator: std.mem.Allocator, opts: Opts, state: *State) anyerror!void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -219,17 +382,17 @@ fn bouncing_spheres(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.image_width = opts.width;
     cam.samples_per_pixel = opts.samples_per_pixel;
     cam.max_depth = opts.max_depth;
-    cam.vfov = 20;
+    cam.vfov = opts.fov;
     cam.look_from = Point3{ 13.0, 2.0, 3.0 };
     cam.look_at = Point3{ 0.0, 0.0, 0.0 };
     cam.vup = Vec3{ 0.0, 1.0, 0.0 };
-    cam.defocus_angle = 0.6;
-    cam.focus_dist = 10.0;
+    cam.defocus_angle = opts.defocus_angle;
+    cam.focus_dist = opts.focus_dist;
 
-    try cam.render(allocator, bvh.hittable());
+    try cam.render(allocator, bvh.hittable(), state);
 }
 
-fn checkered_spheres(allocator: std.mem.Allocator, opts: Opts) !void {
+fn checkered_spheres(allocator: std.mem.Allocator, opts: Opts, state: *State) anyerror!void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -252,17 +415,17 @@ fn checkered_spheres(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.image_width = opts.width;
     cam.samples_per_pixel = opts.samples_per_pixel;
     cam.max_depth = opts.max_depth;
-    cam.vfov = 20;
+    cam.vfov = opts.fov;
     cam.look_from = Point3{ 13.0, 2.0, 3.0 };
     cam.look_at = Point3{ 0.0, 0.0, 0.0 };
     cam.vup = Vec3{ 0.0, 1.0, 0.0 };
-    cam.defocus_angle = 0.0;
-    cam.focus_dist = 10.0;
+    cam.defocus_angle = opts.defocus_angle;
+    cam.focus_dist = opts.focus_dist;
 
-    try cam.render(allocator, bvh.hittable());
+    try cam.render(allocator, bvh.hittable(), state);
 }
 
-fn earth(allocator: std.mem.Allocator, opts: Opts) !void {
+fn earth(allocator: std.mem.Allocator, opts: Opts, state: *State) anyerror!void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -282,17 +445,17 @@ fn earth(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.image_width = opts.width;
     cam.samples_per_pixel = opts.samples_per_pixel;
     cam.max_depth = opts.max_depth;
-    cam.vfov = 20;
+    cam.vfov = opts.fov;
     cam.look_from = Point3{ 0.0, 0.0, 12.0 };
     cam.look_at = Point3{ 0.0, 0.0, 0.0 };
     cam.vup = Vec3{ 0.0, 1.0, 0.0 };
-    cam.defocus_angle = 0.0;
-    cam.focus_dist = 10.0;
+    cam.defocus_angle = opts.defocus_angle;
+    cam.focus_dist = opts.focus_dist;
 
-    try cam.render(allocator, bvh.hittable());
+    try cam.render(allocator, bvh.hittable(), state);
 }
 
-fn perlin_spheres(allocator: std.mem.Allocator, opts: Opts) !void {
+fn perlin_spheres(allocator: std.mem.Allocator, opts: Opts, state: *State) anyerror!void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -313,17 +476,17 @@ fn perlin_spheres(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.image_width = opts.width;
     cam.samples_per_pixel = opts.samples_per_pixel;
     cam.max_depth = opts.max_depth;
-    cam.vfov = 20;
+    cam.vfov = opts.fov;
     cam.look_from = Point3{ 13.0, 2.0, 3.0 };
     cam.look_at = Point3{ 0.0, 0.0, 0.0 };
     cam.vup = Vec3{ 0.0, 1.0, 0.0 };
-    cam.defocus_angle = 0.0;
-    cam.focus_dist = 10.0;
+    cam.defocus_angle = opts.defocus_angle;
+    cam.focus_dist = opts.focus_dist;
 
-    try cam.render(allocator, bvh.hittable());
+    try cam.render(allocator, bvh.hittable(), state);
 }
 
-fn quads(allocator: std.mem.Allocator, opts: Opts) !void {
+fn quads(allocator: std.mem.Allocator, opts: Opts, state: *State) anyerror!void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -359,17 +522,17 @@ fn quads(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.image_width = opts.width;
     cam.samples_per_pixel = opts.samples_per_pixel;
     cam.max_depth = opts.max_depth;
-    cam.vfov = 80;
+    cam.vfov = opts.fov;
     cam.look_from = Point3{ 0.0, 0.0, 9.0 };
     cam.look_at = Point3{ 0.0, 0.0, 0.0 };
     cam.vup = Vec3{ 0.0, 1.0, 0.0 };
-    cam.defocus_angle = 0.0;
-    cam.focus_dist = 10.0;
+    cam.defocus_angle = opts.defocus_angle;
+    cam.focus_dist = opts.focus_dist;
 
-    try cam.render(allocator, bvh.hittable());
+    try cam.render(allocator, bvh.hittable(), state);
 }
 
-fn diffuse_light(allocator: std.mem.Allocator, opts: Opts) !void {
+fn diffuse_light(allocator: std.mem.Allocator, opts: Opts, state: *State) anyerror!void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -405,18 +568,18 @@ fn diffuse_light(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.image_width = opts.width;
     cam.samples_per_pixel = opts.samples_per_pixel;
     cam.max_depth = opts.max_depth;
-    cam.vfov = 20;
+    cam.vfov = opts.fov;
     cam.look_from = Point3{ 20.0, 3.0, 6.0 };
     cam.look_at = Point3{ 0.0, 2.0, 0.0 };
     cam.vup = Vec3{ 0.0, 1.0, 0.0 };
-    cam.defocus_angle = 0.0;
-    cam.focus_dist = 10.0;
+    cam.defocus_angle = opts.defocus_angle;
+    cam.focus_dist = opts.focus_dist;
     cam.background_color = Color{ 0.0, 0.0, 0.0 };
 
-    try cam.render(allocator, bvh.hittable());
+    try cam.render(allocator, bvh.hittable(), state);
 }
 
-fn empty_cornell_box(allocator: std.mem.Allocator, opts: Opts) !void {
+fn empty_cornell_box(allocator: std.mem.Allocator, opts: Opts, state: *State) anyerror!void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -452,18 +615,18 @@ fn empty_cornell_box(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.image_width = opts.width;
     cam.samples_per_pixel = opts.samples_per_pixel;
     cam.max_depth = opts.max_depth;
-    cam.vfov = 40;
+    cam.vfov = opts.fov;
     cam.look_from = Point3{ 278.0, 278.0, -800.0 };
     cam.look_at = Point3{ 278.0, 278.0, 0.0 };
     cam.vup = Vec3{ 0.0, 1.0, 0.0 };
-    cam.defocus_angle = 0.0;
-    cam.focus_dist = 10.0;
+    cam.defocus_angle = opts.defocus_angle;
+    cam.focus_dist = opts.focus_dist;
     cam.background_color = Color{ 0.0, 0.0, 0.0 };
 
-    try cam.render(allocator, bvh.hittable());
+    try cam.render(allocator, bvh.hittable(), state);
 }
 
-fn cornell_box(allocator: std.mem.Allocator, opts: Opts) !void {
+fn cornell_box(allocator: std.mem.Allocator, opts: Opts, state: *State) anyerror!void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -514,18 +677,18 @@ fn cornell_box(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.image_width = opts.width;
     cam.samples_per_pixel = opts.samples_per_pixel;
     cam.max_depth = opts.max_depth;
-    cam.vfov = 40;
+    cam.vfov = opts.fov;
     cam.look_from = Point3{ 278.0, 278.0, -800.0 };
     cam.look_at = Point3{ 278.0, 278.0, 0.0 };
     cam.vup = Vec3{ 0.0, 1.0, 0.0 };
-    cam.defocus_angle = 0.0;
-    cam.focus_dist = 10.0;
+    cam.defocus_angle = opts.defocus_angle;
+    cam.focus_dist = opts.focus_dist;
     cam.background_color = Color{ 0.0, 0.0, 0.0 };
 
-    try cam.render(allocator, bvh.hittable());
+    try cam.render(allocator, bvh.hittable(), state);
 }
 
-fn cornell_box_smoke(allocator: std.mem.Allocator, opts: Opts) !void {
+fn cornell_box_smoke(allocator: std.mem.Allocator, opts: Opts, state: *State) anyerror!void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -578,18 +741,18 @@ fn cornell_box_smoke(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.image_width = opts.width;
     cam.samples_per_pixel = opts.samples_per_pixel;
     cam.max_depth = opts.max_depth;
-    cam.vfov = 40;
+    cam.vfov = opts.fov;
     cam.look_from = Point3{ 278.0, 278.0, -800.0 };
     cam.look_at = Point3{ 278.0, 278.0, 0.0 };
     cam.vup = Vec3{ 0.0, 1.0, 0.0 };
-    cam.defocus_angle = 0.0;
-    cam.focus_dist = 10.0;
+    cam.defocus_angle = opts.defocus_angle;
+    cam.focus_dist = opts.focus_dist;
     cam.background_color = Color{ 0.0, 0.0, 0.0 };
 
-    try cam.render(allocator, bvh.hittable());
+    try cam.render(allocator, bvh.hittable(), state);
 }
 
-fn all_features(allocator: std.mem.Allocator, opts: Opts) !void {
+fn all_features(allocator: std.mem.Allocator, opts: Opts, state: *State) anyerror!void {
     // world
     var world = HittableList.init(allocator);
     defer world.clear();
@@ -690,13 +853,13 @@ fn all_features(allocator: std.mem.Allocator, opts: Opts) !void {
     cam.image_width = opts.width;
     cam.samples_per_pixel = opts.samples_per_pixel;
     cam.max_depth = opts.max_depth;
-    cam.vfov = 40;
+    cam.vfov = opts.fov;
     cam.look_from = Point3{ 478.0, 278.0, -600.0 };
     cam.look_at = Point3{ 278.0, 278.0, 0.0 };
     cam.vup = Vec3{ 0.0, 1.0, 0.0 };
-    cam.defocus_angle = 0.0;
-    cam.focus_dist = 10.0;
+    cam.defocus_angle = opts.defocus_angle;
+    cam.focus_dist = opts.focus_dist;
     cam.background_color = Color{ 0.0, 0.0, 0.0 };
 
-    try cam.render(allocator, bvh.hittable());
+    try cam.render(allocator, bvh.hittable(), state);
 }

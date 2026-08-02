@@ -13,6 +13,7 @@ const color = @import("color.zig");
 const Color = color.Color;
 const HitRecord = @import("hittable.zig").HitRecord;
 const Interval = @import("interval.zig").Interval;
+const State = @import("main.zig").State;
 
 pub const Camera = struct {
     aspect_radio: f64 = 1.0, // ratio of image eidth over height
@@ -38,19 +39,15 @@ pub const Camera = struct {
     defocus_disk_v: Vec3 = undefined, // defocus disk vertical radius
     background_color: Color = Color{ 0.70, 0.80, 1.0 },
 
-    pub fn render(self: *Camera, allocator: std.mem.Allocator, world: Hittable) !void {
+    pub fn render(self: *Camera, allocator: std.mem.Allocator, world: Hittable, state: *State) !void {
         self.initialize();
-
-        const total_pixels = self.image_width * self.image_height;
-        const buffer = try allocator.alloc(Color, total_pixels);
-        defer allocator.free(buffer);
 
         var pool: std.Thread.Pool = undefined;
         try pool.init(.{ .allocator = allocator });
         defer pool.deinit();
 
         var wg = std.Thread.WaitGroup{};
-        var lines_remaining = std.atomic.Value(u32).init(self.image_height);
+        var lines_remaining = std.atomic.Value(u32).init(self.image_height - 1);
 
         var j: u32 = 0;
         while (j < self.image_height) : (j = j + 1) {
@@ -58,29 +55,12 @@ pub const Camera = struct {
                 .camera = self,
                 .world = world,
                 .line_y = @as(u32, @intCast(j)),
-                .buffer = buffer,
+                .state = state,
                 .counter = &lines_remaining,
             }});
         }
 
-        while (lines_remaining.load(.monotonic) > 0) {
-            debug.print("\x1b[2K\rlines remaining: {d}", .{lines_remaining.load(.monotonic)});
-            std.time.sleep(100 * std.time.ns_per_ms);
-        }
-
         pool.waitAndWork(&wg);
-        debug.print("\x1b[2K\rrender done! writing file...\n", .{});
-
-        var bufwriter = std.io.bufferedWriter(stdout);
-        var bwriter = bufwriter.writer();
-        try bwriter.print("P3\n{d} {d}\n255\n", .{ self.image_width, self.image_height });
-
-        for (buffer) |pixel_color| {
-            try color.write(bwriter, pixel_color);
-        }
-
-        try bufwriter.flush();
-        debug.print("\x1b[2K\rdone!\n", .{});
     }
 
     fn initialize(self: *Camera) void {
@@ -185,11 +165,18 @@ const Task = struct {
     camera: *Camera,
     world: Hittable,
     line_y: u32,
-    buffer: []Color,
+    state: *State,
     counter: *std.atomic.Value(u32),
 };
 
 fn render_line(task: Task) void {
+    // TODO: better moment to check the cancel?
+    // if the current line is heavy, the user experience a delay between the
+    // cancel and the start of the new render
+    if (task.state.cancel_render.load(.monotonic)) {
+        return;
+    }
+
     var i: u32 = 0;
     while (i < task.camera.image_width) : (i = i + 1) {
         var pixel_color = Color{ 0.0, 0.0, 0.0 };
@@ -201,10 +188,13 @@ fn render_line(task: Task) void {
             pixel_color += task.camera.ray_color(ray, task.camera.max_depth, task.world);
         }
 
-        const idx = task.line_y * task.camera.image_width + i;
+        const idx = (task.line_y * task.camera.image_width + i) * 3;
         pixel_color *= f3(task.camera.pixel_samples_scale);
-        task.buffer[idx] = pixel_color;
+        task.state.buffer[idx + 0] = color.to_byte(pixel_color[0]);
+        task.state.buffer[idx + 1] = color.to_byte(pixel_color[1]);
+        task.state.buffer[idx + 2] = color.to_byte(pixel_color[2]);
     }
 
-    _ = task.counter.fetchSub(1, .monotonic);
+    const lines_remaining = task.counter.fetchSub(1, .monotonic);
+    task.state.lines_remaining = lines_remaining;
 }
