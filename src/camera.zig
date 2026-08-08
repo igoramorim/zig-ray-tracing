@@ -42,25 +42,8 @@ pub const Camera = struct {
     pub fn render(self: *Camera, allocator: std.mem.Allocator, world: Hittable, state: *State) !void {
         self.initialize();
 
-        var pool: std.Thread.Pool = undefined;
-        try pool.init(.{ .allocator = allocator });
-        defer pool.deinit();
-
-        var wg = std.Thread.WaitGroup{};
-        var lines_remaining = std.atomic.Value(u32).init(self.image_height - 1);
-
-        var j: u32 = 0;
-        while (j < self.image_height) : (j = j + 1) {
-            pool.spawnWg(&wg, render_line, .{Task{
-                .camera = self,
-                .world = world,
-                .line_y = @as(u32, @intCast(j)),
-                .state = state,
-                .counter = &lines_remaining,
-            }});
-        }
-
-        pool.waitAndWork(&wg);
+        // try render_by_line(allocator, self, world, state);
+        try render_by_tile(allocator, self, world, state);
     }
 
     fn initialize(self: *Camera) void {
@@ -161,15 +144,37 @@ pub const Camera = struct {
     }
 };
 
-const Task = struct {
+fn render_by_line(allocator: std.mem.Allocator, camera: *Camera, world: Hittable, state: *State) !void {
+    var pool: std.Thread.Pool = undefined;
+    try pool.init(.{ .allocator = allocator });
+    defer pool.deinit();
+
+    var wg = std.Thread.WaitGroup{};
+    var lines_remaining = std.atomic.Value(u32).init(camera.image_height);
+
+    var j: u32 = 0;
+    while (j < camera.image_height) : (j = j + 1) {
+        pool.spawnWg(&wg, render_line, .{RenderLineTask{
+            .camera = camera,
+            .world = world,
+            .line_y = @as(u32, @intCast(j)),
+            .state = state,
+            .lines_remaining = &lines_remaining,
+        }});
+    }
+
+    pool.waitAndWork(&wg);
+}
+
+const RenderLineTask = struct {
     camera: *Camera,
     world: Hittable,
     line_y: u32,
     state: *State,
-    counter: *std.atomic.Value(u32),
+    lines_remaining: *std.atomic.Value(u32),
 };
 
-fn render_line(task: Task) void {
+fn render_line(task: RenderLineTask) void {
     // TODO: better moment to check the cancel?
     // if the current line is heavy, the user experience a delay between the
     // cancel and the start of the new render
@@ -195,6 +200,84 @@ fn render_line(task: Task) void {
         task.state.buffer[idx + 2] = color.to_byte(pixel_color[2]);
     }
 
-    const lines_remaining = task.counter.fetchSub(1, .monotonic);
-    task.state.lines_remaining = lines_remaining;
+    const lines_remaining = task.lines_remaining.fetchSub(1, .monotonic) - 1;
+    const lines_done = task.camera.image_height - lines_remaining;
+    task.state.progress = @intCast(((lines_done * 100) / task.camera.image_height));
+}
+
+fn render_by_tile(allocator: std.mem.Allocator, camera: *Camera, world: Hittable, state: *State) !void {
+    var pool: std.Thread.Pool = undefined;
+    try pool.init(.{ .allocator = allocator });
+    defer pool.deinit();
+
+    var wg = std.Thread.WaitGroup{};
+
+    const tile_size: u8 = 16;
+    const tiles_x: u32 = @intCast(camera.image_width / tile_size);
+    const tiles_y: u32 = @intCast(camera.image_height / tile_size);
+    const total_tiles: u32 = tiles_x * tiles_y;
+    var tiles_remaining = std.atomic.Value(u32).init(total_tiles);
+
+    var j: u32 = 0;
+    while (j < tiles_y) : (j = j + 1) {
+        var i: u32 = 0;
+        while (i < tiles_x) : (i = i + 1) {
+            pool.spawnWg(&wg, render_tile, .{RenderTileTask{
+                .camera = camera,
+                .world = world,
+                .x_start = i * tile_size,
+                .x_end = (i * tile_size) + tile_size,
+                .y_start = j * tile_size,
+                .y_end = (j * tile_size) + tile_size,
+                .state = state,
+                .total_tiles = total_tiles,
+                .tiles_remaining = &tiles_remaining,
+            }});
+        }
+    }
+
+    pool.waitAndWork(&wg);
+}
+
+const RenderTileTask = struct {
+    camera: *Camera,
+    world: Hittable,
+    x_start: u32,
+    x_end: u32,
+    y_start: u32,
+    y_end: u32,
+    state: *State,
+    total_tiles: u32,
+    tiles_remaining: *std.atomic.Value(u32),
+};
+
+fn render_tile(task: RenderTileTask) void {
+    if (task.state.cancel_render.load(.monotonic)) {
+        return;
+    }
+
+    var j: u32 = task.y_start;
+    while (j < task.y_end) : (j = j + 1) {
+        var i: u32 = task.x_start;
+        while (i < task.x_end) : (i = i + 1) {
+            var pixel_color = Color{ 0.0, 0.0, 0.0 };
+            var sample: u32 = 0;
+
+            // antialiasing: use multiple samples around the target pixel
+            while (sample < task.camera.samples_per_pixel) : (sample = sample + 1) {
+                const ray = task.camera.get_ray(i, j);
+                pixel_color += task.camera.ray_color(ray, task.camera.max_depth, task.world);
+            }
+
+            const idx = (j * task.camera.image_width + i) * 3;
+            pixel_color *= f3(task.camera.pixel_samples_scale);
+            task.state.buffer[idx + 0] = color.to_byte(pixel_color[0]);
+            task.state.buffer[idx + 1] = color.to_byte(pixel_color[1]);
+            task.state.buffer[idx + 2] = color.to_byte(pixel_color[2]);
+        }
+    }
+
+    const tiles_remaining = task.tiles_remaining.fetchSub(1, .monotonic) - 1;
+    const tiles_done = task.total_tiles - tiles_remaining;
+    task.state.progress = @intCast(((tiles_done * 100) / task.total_tiles));
 }

@@ -235,7 +235,7 @@ pub fn main() !void {
                     state.cancel_render.store(false, .monotonic); // reset the cancel flag
 
                     // start a new render
-                    state.lines_remaining = 0;
+                    state.progress = 0;
                     const scene = get_scene_fn(selection);
                     render_thread = try std.Thread.spawn(
                         .{},
@@ -245,7 +245,7 @@ pub fn main() !void {
                 }
             }
 
-            zgui.text("Lines remaining: {d}", .{state.lines_remaining});
+            zgui.text("{d}%", .{state.progress});
         }
         zgui.end();
         zgui.backend.draw();
@@ -258,7 +258,7 @@ pub const State = struct {
     allocator: std.mem.Allocator,
     buffer: []u8,
     cancel_render: std.atomic.Value(bool),
-    lines_remaining: u32 = 0,
+    progress: u8 = 0,
 
     pub fn init(allocator: std.mem.Allocator, total_pixels: usize) !State {
         const buffer = try allocator.alloc(u8, total_pixels);
