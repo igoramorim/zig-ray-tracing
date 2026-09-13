@@ -30,33 +30,18 @@ const Box = @import("hittable.zig").Box;
 const RotateY = @import("hittable.zig").RotateY;
 const Translate = @import("hittable.zig").Translate;
 const ConstantMedium = @import("hittable.zig").ConstantMedium;
+const Editor = @import("editor.zig").Editor;
+const Opts = @import("editor.zig").Opts;
 
 const zglfw = @import("zglfw");
 const zgui = @import("zgui");
 const zopengl = @import("zopengl");
 
-const width = 800;
-const height = 800;
+const window_width = 1280;
+const window_height = 960;
 
-const default_samples_per_pixel = 30;
-const min_samples_per_pixel = 1;
-const max_samples_per_pixel = 10_000;
-
-const default_max_depth = 20;
-const min_max_depth = 1;
-const max_max_depth = 100;
-
-const default_fov = 20.0;
-const min_fov = 1.0;
-const max_fov = 90.0;
-
-const default_defocus_angle = 0.0;
-const min_defocus_angle = 0.0;
-const max_defocus_angle = 10.0;
-
-const default_focus_dist = 10.0;
-const min_focus_dist = 1.0;
-const max_focus_dist = 100.0;
+const canvas_width = 800;
+const canvas_height = 800;
 
 // TODO:
 // - (zig) Remove the hittable() material() methods. Add an attr that holds it and it is initialized in init()
@@ -79,7 +64,7 @@ pub fn main() !void {
     zglfw.windowHint(.client_api, .opengl_api);
     zglfw.windowHint(.resizable, false);
 
-    const window = try zglfw.Window.create(width, height, "zig ray tracer", null, null);
+    const window = try zglfw.Window.create(window_width, window_height, "zig ray tracer", null, null);
     defer window.destroy();
 
     zglfw.makeContextCurrent(window);
@@ -102,7 +87,7 @@ pub fn main() !void {
     zgui.backend.init(window);
     defer zgui.backend.deinit();
 
-    const total_pixels: usize = width * height * 3; // RGB
+    const total_pixels: usize = canvas_width * canvas_height * 3; // RGB
     var state = try State.init(allocator, total_pixels);
     defer state.deinit();
     var render_thread: ?std.Thread = null;
@@ -114,12 +99,14 @@ pub fn main() !void {
         }
     }
 
+    var editor = Editor.init(canvas_width, &state.progress);
+
     var tex_id: gl.Uint = 0;
     gl.genTextures(1, &tex_id);
     gl.bindTexture(gl.TEXTURE_2D, tex_id);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, width, height, 0, gl.RGB, gl.UNSIGNED_BYTE, null);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, canvas_width, canvas_height, 0, gl.RGB, gl.UNSIGNED_BYTE, null);
     gl.bindTexture(gl.TEXTURE_2D, 0);
 
     var framebuf_id: gl.Uint = 0;
@@ -128,127 +115,57 @@ pub fn main() !void {
     gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex_id, 0);
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, 0);
 
-    var opts = Opts{
-        .width = width,
-    };
-    var samples_per_pixel: i32 = default_samples_per_pixel;
-    var max_depth: i32 = default_max_depth;
-    var fov: f32 = default_fov;
-    var defocus_angle: f32 = default_defocus_angle;
-    var focus_dist: f32 = default_focus_dist;
-
-    var current_selection: ?usize = null;
-    const scenes_text = [_][:0]const u8{
-        "bouncing spheres",
-        "checkered spheres",
-        "earth",
-        "perlin spheres",
-        "quads",
-        "diffuse light",
-        "empty cornell box",
-        "cornell box",
-        "cornell box smoke",
-        "all features",
-    };
+    // TODO: load all pre-defined scenes objects to editor
+    //
+    // var current_selection: ?usize = null;
+    // const scenes_text = [_][:0]const u8{
+    //     "bouncing spheres",
+    //     "checkered spheres",
+    //     "earth",
+    //     "perlin spheres",
+    //     "quads",
+    //     "diffuse light",
+    //     "empty cornell box",
+    //     "cornell box",
+    //     "cornell box smoke",
+    //     "all features",
+    // };
 
     while (!window.shouldClose() and window.getKey(.escape) != .press) {
         zglfw.pollEvents();
 
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
         gl.bindTexture(gl.TEXTURE_2D, tex_id);
-        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, height, gl.RGB, gl.UNSIGNED_BYTE, state.buffer.ptr);
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, canvas_width, canvas_height, gl.RGB, gl.UNSIGNED_BYTE, state.buffer.ptr);
 
         gl.bindFramebuffer(gl.READ_FRAMEBUFFER, framebuf_id);
         gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, 0);
         // destination height and width are swapped so OpenGL does not render upside down
-        gl.blitFramebuffer(0, 0, width, height, 0, height, width, 0, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+        gl.blitFramebuffer(0, 0, canvas_width, canvas_height, 0, canvas_height, canvas_width, 0, gl.COLOR_BUFFER_BIT, gl.NEAREST);
 
         const fb_size = window.getFramebufferSize();
-        zgui.backend.newFrame(@intCast(fb_size[0]), @intCast(fb_size[1]));
+        if (editor.render(@intCast(fb_size[0]), @intCast(fb_size[1]))) {
+            state.cancel_render.store(true, .monotonic); // cancels the current render
 
-        if (zgui.begin("Settings", .{})) {
-            const preview_text = if (current_selection != null)
-                scenes_text[current_selection.?]
-            else
-                "Choose a scene";
-
-            if (zgui.beginCombo("Scene", .{ .preview_value = preview_text })) {
-                defer zgui.endCombo();
-
-                for (scenes_text, 0..) |text, index| {
-                    const is_selected = (current_selection == index);
-                    if (zgui.selectable(text, .{ .selected = is_selected })) {
-                        current_selection = index;
-                    }
-                }
+            if (render_thread) |thread| { // wait the thread finishes
+                thread.join();
+                render_thread = null;
             }
 
-            if (zgui.sliderInt("Samples per pixel", .{
-                .v = &samples_per_pixel,
-                .min = min_samples_per_pixel,
-                .max = max_samples_per_pixel,
-            })) {
-                opts.samples_per_pixel = @intCast(samples_per_pixel);
-            }
+            @memset(state.buffer, 0); // clear the buffer
+            state.cancel_render.store(false, .monotonic); // reset the cancel flag
 
-            if (zgui.sliderInt("Max depth", .{
-                .v = &max_depth,
-                .min = min_max_depth,
-                .max = max_max_depth,
-            })) {
-                opts.max_depth = @intCast(max_depth);
-            }
-
-            if (zgui.sliderFloat("FOV", .{
-                .v = &fov,
-                .min = min_fov,
-                .max = max_fov,
-            })) {
-                opts.fov = @floatCast(fov);
-            }
-
-            if (zgui.sliderFloat("Defocus Angle", .{
-                .v = &defocus_angle,
-                .min = min_defocus_angle,
-                .max = max_defocus_angle,
-            })) {
-                opts.defocus_angle = @floatCast(defocus_angle);
-            }
-
-            if (zgui.sliderFloat("Focus Distance", .{
-                .v = &focus_dist,
-                .min = min_focus_dist,
-                .max = max_focus_dist,
-            })) {
-                opts.focus_dist = @floatCast(focus_dist);
-            }
-
-            if (zgui.button("Render", .{})) {
-                if (current_selection) |selection| {
-                    state.cancel_render.store(true, .monotonic); // cancels the current render
-
-                    if (render_thread) |thread| { // wait the thread finishes
-                        thread.join();
-                        render_thread = null;
-                    }
-
-                    @memset(state.buffer, 0); // clear the buffer
-                    state.cancel_render.store(false, .monotonic); // reset the cancel flag
-
-                    // start a new render
-                    state.progress = 0;
-                    const scene = get_scene_fn(selection);
-                    render_thread = try std.Thread.spawn(
-                        .{},
-                        scene_runner,
-                        .{ allocator, scene, opts, &state },
-                    );
-                }
-            }
-
-            zgui.text("{d}%", .{state.progress});
+            // start a new render
+            state.progress = 0;
+            const scene = get_scene_fn(0);
+            render_thread = try std.Thread.spawn(
+                .{},
+                scene_runner,
+                .{ allocator, scene, editor.opts, &state },
+            );
         }
-        zgui.end();
-        zgui.backend.draw();
 
         window.swapBuffers();
     }
@@ -297,15 +214,6 @@ fn get_scene_fn(id: usize) scene_fn {
         else => unreachable,
     }
 }
-
-const Opts = struct {
-    width: u32 = width,
-    samples_per_pixel: u32 = default_samples_per_pixel,
-    max_depth: u32 = default_max_depth,
-    fov: f64 = default_fov,
-    defocus_angle: f64 = default_defocus_angle,
-    focus_dist: f64 = default_focus_dist,
-};
 
 fn bouncing_spheres(allocator: std.mem.Allocator, opts: Opts, state: *State) anyerror!void {
     // world
@@ -383,8 +291,8 @@ fn bouncing_spheres(allocator: std.mem.Allocator, opts: Opts, state: *State) any
     cam.samples_per_pixel = opts.samples_per_pixel;
     cam.max_depth = opts.max_depth;
     cam.vfov = opts.fov;
-    cam.look_from = Point3{ 13.0, 2.0, 3.0 };
-    cam.look_at = Point3{ 0.0, 0.0, 0.0 };
+    cam.look_from = opts.look_from;
+    cam.look_at = opts.look_at;
     cam.vup = Vec3{ 0.0, 1.0, 0.0 };
     cam.defocus_angle = opts.defocus_angle;
     cam.focus_dist = opts.focus_dist;
