@@ -99,7 +99,8 @@ pub fn main() !void {
         }
     }
 
-    var editor = Editor.init(canvas_width, &state.progress);
+    var editor = Editor.init(allocator, canvas_width, &state.progress);
+    defer editor.deinit();
 
     var tex_id: gl.Uint = 0;
     gl.genTextures(1, &tex_id);
@@ -146,7 +147,7 @@ pub fn main() !void {
         gl.blitFramebuffer(0, 0, canvas_width, canvas_height, 0, canvas_height, canvas_width, 0, gl.COLOR_BUFFER_BIT, gl.NEAREST);
 
         const fb_size = window.getFramebufferSize();
-        if (editor.render(@intCast(fb_size[0]), @intCast(fb_size[1]))) {
+        if (try editor.render(@intCast(fb_size[0]), @intCast(fb_size[1]))) {
             state.cancel_render.store(true, .monotonic); // cancels the current render
 
             if (render_thread) |thread| { // wait the thread finishes
@@ -163,7 +164,7 @@ pub fn main() !void {
             render_thread = try std.Thread.spawn(
                 .{},
                 scene_runner,
-                .{ allocator, scene, editor.opts, &state },
+                .{ allocator, scene, editor.render_opts, &state },
             );
         }
 
@@ -195,8 +196,19 @@ pub const State = struct {
 
 const scene_fn = *const fn (allocator: std.mem.Allocator, opts: Opts, state: *State) anyerror!void;
 
-fn scene_runner(allocator: std.mem.Allocator, scene: scene_fn, opts: Opts, state: *State) anyerror!void {
-    try scene(allocator, opts, state);
+fn scene_runner(allocator: std.mem.Allocator, _: scene_fn, opts: Opts, state: *State) anyerror!void {
+    var cam = Camera{};
+    cam.aspect_radio = 16.0 / 9.0;
+    cam.image_width = opts.width;
+    cam.samples_per_pixel = opts.samples_per_pixel;
+    cam.max_depth = opts.max_depth;
+    cam.vfov = opts.fov;
+    cam.look_from = opts.look_from;
+    cam.look_at = opts.look_at;
+    cam.vup = Vec3{ 0.0, 1.0, 0.0 };
+    cam.defocus_angle = opts.defocus_angle;
+    cam.focus_dist = opts.focus_dist;
+    try cam.render(allocator, opts.world.hittable(), state);
 }
 
 fn get_scene_fn(id: usize) scene_fn {
