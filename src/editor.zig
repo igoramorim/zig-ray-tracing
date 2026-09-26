@@ -118,7 +118,9 @@ const min_mat_refraction = 0.0;
 const ObjOpts = struct {
     obj_type: ObjectType = undefined,
     obj_pos: [3]f32 = default_obj_pos,
+    obj_pos2: [3]f32 = default_obj_pos,
     obj_radius: f32 = default_obj_radius,
+    obj_moving: bool = false,
 
     mat_type: MaterialType = undefined,
     mat_color: [3]f32 = default_mat_color,
@@ -245,7 +247,11 @@ pub const Editor = struct {
 
                     if (obj.obj_type == ObjectType.sphere) {
                         const sphere = try self.allocator.create(Sphere);
-                        sphere.* = Sphere.init(obj.obj_pos, obj.obj_radius, mat.*);
+                        if (obj.obj_moving) {
+                            sphere.* = Sphere.init_moving(obj.obj_pos, obj.obj_pos2, obj.obj_radius, mat.*);
+                        } else {
+                            sphere.* = Sphere.init(obj.obj_pos, obj.obj_radius, mat.*);
+                        }
                         hittable.* = sphere.hittable();
                     }
                     try self.render_opts.world.add(hittable.*);
@@ -267,11 +273,11 @@ pub const Editor = struct {
             defer zgui.end();
 
             // Objects
-            //     Sphere
-            //         Center (Position)
-            //         Radius
-            //         Moving? Center1 / Center2
-            //         Material
+            //     x Sphere
+            //         x Center (Position)
+            //         x Radius
+            //         x Moving? Center1 / Center2
+            //         x Material
             //     Plane (Quad)
             //         Corner (Point)
             //         U
@@ -286,16 +292,19 @@ pub const Editor = struct {
             //         Color / Texture
             // Materials
             //     Lambertian
-            //         Color / Texture
-            //     Metal
-            //         Color
-            //         Fuzz
-            //     Dielectric
-            //         Refraction
+            //         x Color
+            //         Texture
+            //     x Metal
+            //         x Color
+            //         x Fuzz
+            //     x Dielectric
+            //         x Refraction
             //     DiffuseLight
-            //         Color / Texture
+            //         x Color
+            //         Texture
             //     Isotropic
-            //         Color / Texture
+            //         Color
+            //         Texture
             // BVH??
             // Translate / Rotate??
 
@@ -318,19 +327,29 @@ pub const Editor = struct {
             // object details
             if (object_selected != null) {
                 if (object_selected.? == @intFromEnum(ObjectType.sphere)) {
+                    if (zgui.checkbox("Moving", .{
+                        .v = &self.obj_opts.obj_moving,
+                    })) {}
+
                     if (zgui.sliderFloat3("Position", .{
                         .v = &self.obj_opts.obj_pos,
                         .min = min_obj_pos,
                         .max = max_obj_pos,
                     })) {}
 
+                    if (self.obj_opts.obj_moving) {
+                        if (zgui.sliderFloat3("Position 2", .{
+                            .v = &self.obj_opts.obj_pos2,
+                            .min = min_obj_pos,
+                            .max = max_obj_pos,
+                        })) {}
+                    }
+
                     if (zgui.sliderFloat("Radius", .{
                         .v = &self.obj_opts.obj_radius,
                         .min = min_obj_radius,
                         .max = max_obj_radius,
                     })) {}
-
-                    // Moving?
                 }
             }
 
