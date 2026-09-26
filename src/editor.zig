@@ -9,6 +9,7 @@ const Sphere = @import("hittable.zig").Sphere;
 const material = @import("material.zig");
 const Material = material.Material;
 const Lambertian = material.Lambertian;
+const Metal = material.Metal;
 
 const zgui = @import("zgui");
 
@@ -95,19 +96,24 @@ const default_obj_pos = [3]f32{ 0.0, 0.0, 0.0 };
 const min_obj_pos = -50.0;
 const max_obj_pos = 50.0;
 
-const default_sphere_radius = 2.0;
-const min_sphere_radius = 1.0;
-const max_sphere_radius = 90.0;
+const default_obj_radius = 2.0;
+const min_obj_radius = 1.0;
+const max_obj_radius = 90.0;
 
 const default_mat_color = [3]f32{ 1.0, 0.0, 0.0 };
+
+const default_mat_fuzz = 0.5;
+const max_mat_fuzz = 1.0;
+const min_mat_fuzz = 0.0;
 
 const ObjOpts = struct {
     obj_type: ObjectType = undefined,
     obj_pos: [3]f32 = default_obj_pos,
-    obj_radius: f32 = default_sphere_radius,
+    obj_radius: f32 = default_obj_radius,
 
     mat_type: MaterialType = undefined,
     mat_color: [3]f32 = default_mat_color,
+    mat_fuzz: f32 = default_mat_fuzz,
 };
 
 pub const Editor = struct {
@@ -209,6 +215,10 @@ pub const Editor = struct {
                         const lamb = try self.allocator.create(Lambertian);
                         lamb.* = try Lambertian.init(self.allocator, obj.mat_color);
                         mat.* = lamb.mat();
+                    } else if (obj.mat_type == MaterialType.metal) {
+                        const metal = try self.allocator.create(Metal);
+                        metal.* = Metal.init(obj.mat_color, obj.mat_fuzz);
+                        mat.* = metal.mat();
                     }
 
                     if (obj.obj_type == ObjectType.sphere) {
@@ -294,8 +304,8 @@ pub const Editor = struct {
 
                     if (zgui.sliderFloat("Radius", .{
                         .v = &self.obj_opts.obj_radius,
-                        .min = min_sphere_radius,
-                        .max = max_sphere_radius,
+                        .min = min_obj_radius,
+                        .max = max_obj_radius,
                     })) {}
 
                     // Moving?
@@ -326,6 +336,16 @@ pub const Editor = struct {
                 if (material_selected == @intFromEnum(MaterialType.lambertian)) {
                     if (zgui.colorEdit3("Color", .{
                         .col = &self.obj_opts.mat_color,
+                    })) {}
+                } else if (material_selected == @intFromEnum(MaterialType.metal)) {
+                    if (zgui.colorEdit3("Color", .{
+                        .col = &self.obj_opts.mat_color,
+                    })) {}
+
+                    if (zgui.sliderFloat("Fuzz", .{
+                        .v = &self.obj_opts.mat_fuzz,
+                        .min = min_mat_fuzz,
+                        .max = max_mat_fuzz,
                     })) {}
                 }
             }
