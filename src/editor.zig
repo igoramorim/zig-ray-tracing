@@ -11,6 +11,7 @@ const Material = material.Material;
 const Lambertian = material.Lambertian;
 const Metal = material.Metal;
 const Dielectric = material.Dielectric;
+const DiffuseLight = material.DiffuseLight;
 
 const zgui = @import("zgui");
 
@@ -229,6 +230,10 @@ pub const Editor = struct {
                         const dielectric = try self.allocator.create(Dielectric);
                         dielectric.* = Dielectric{ .refractionIndex = obj.mat_refraction };
                         mat.* = dielectric.mat();
+                    } else if (obj.mat_type == MaterialType.diffuse_light) {
+                        const difflight = try self.allocator.create(DiffuseLight);
+                        difflight.* = try DiffuseLight.init_color(self.allocator, obj.mat_color);
+                        mat.* = difflight.mat();
                     }
 
                     if (obj.obj_type == ObjectType.sphere) {
@@ -362,6 +367,10 @@ pub const Editor = struct {
                         .v = &self.obj_opts.mat_refraction,
                         .min = min_mat_refraction,
                         .max = max_mat_refraction,
+                    })) {}
+                } else if (material_selected == @intFromEnum(MaterialType.diffuse_light)) {
+                    if (zgui.colorEdit3("Color", .{
+                        .col = &self.obj_opts.mat_color,
                     })) {}
                 }
             }
