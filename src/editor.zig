@@ -6,6 +6,7 @@ const Point3 = vec3.Point3;
 const Hittable = @import("hittable.zig").Hittable;
 const HittableList = @import("hittable.zig").HittableList;
 const Sphere = @import("hittable.zig").Sphere;
+const Quad = @import("hittable.zig").Quad;
 const material = @import("material.zig");
 const Material = material.Material;
 const Lambertian = material.Lambertian;
@@ -119,6 +120,7 @@ const ObjOpts = struct {
     obj_type: ObjectType = undefined,
     obj_pos: [3]f32 = default_obj_pos,
     obj_pos2: [3]f32 = default_obj_pos,
+    obj_pos3: [3]f32 = default_obj_pos,
     obj_radius: f32 = default_obj_radius,
     obj_moving: bool = false,
 
@@ -253,15 +255,14 @@ pub const Editor = struct {
                             sphere.* = Sphere.init(obj.obj_pos, obj.obj_radius, mat.*);
                         }
                         hittable.* = sphere.hittable();
+                    } else if (obj.obj_type == ObjectType.plane) {
+                        const quad = try self.allocator.create(Quad);
+                        quad.* = Quad.init(obj.obj_pos, obj.obj_pos2, obj.obj_pos3, mat.*);
+                        hittable.* = quad.hittable();
                     }
+
                     try self.render_opts.world.add(hittable.*);
                 }
-
-                std.debug.print("render:\n", .{});
-                for (self.render_opts.world.objects.items) |obj| {
-                    std.debug.print("{any}\n\n", .{obj});
-                }
-                std.debug.print("\n", .{});
 
                 return true;
             }
@@ -278,11 +279,11 @@ pub const Editor = struct {
             //         x Radius
             //         x Moving? Center1 / Center2
             //         x Material
-            //     Plane (Quad)
-            //         Corner (Point)
-            //         U
-            //         V
-            //         Material
+            //     x Plane (Quad)
+            //         x Corner (Point)
+            //         x U
+            //         x V
+            //         x Material
             //     Box
             //         Corners (Point A / B)
             //         Material
@@ -349,6 +350,24 @@ pub const Editor = struct {
                         .v = &self.obj_opts.obj_radius,
                         .min = min_obj_radius,
                         .max = max_obj_radius,
+                    })) {}
+                } else if (object_selected.? == @intFromEnum(ObjectType.plane)) {
+                    if (zgui.sliderFloat3("Left Bottom Corner", .{
+                        .v = &self.obj_opts.obj_pos,
+                        .min = min_obj_pos,
+                        .max = max_obj_pos,
+                    })) {}
+
+                    if (zgui.sliderFloat3("U", .{
+                        .v = &self.obj_opts.obj_pos2,
+                        .min = min_obj_pos,
+                        .max = max_obj_pos,
+                    })) {}
+
+                    if (zgui.sliderFloat3("V", .{
+                        .v = &self.obj_opts.obj_pos3,
+                        .min = min_obj_pos,
+                        .max = max_obj_pos,
                     })) {}
                 }
             }
