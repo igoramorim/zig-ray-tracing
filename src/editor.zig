@@ -15,6 +15,8 @@ const DiffuseLight = material.DiffuseLight;
 
 const zgui = @import("zgui");
 
+const default_background_color = [3]f32{ 0.70, 0.80, 1.0 };
+
 const default_samples_per_pixel = 30;
 const min_samples_per_pixel = 1;
 const max_samples_per_pixel = 10_000;
@@ -76,6 +78,7 @@ pub const Opts = struct {
     focus_dist: f64 = default_focus_dist,
     look_from: Point3 = default_look_from,
     look_at: Point3 = default_look_at,
+    background_color: [3]f32 = default_background_color,
     world: HittableList = undefined,
 };
 
@@ -210,6 +213,10 @@ pub const Editor = struct {
             })) {
                 self.render_opts.look_at = look_at;
             }
+
+            if (zgui.colorEdit3("Background Color", .{
+                .col = &self.render_opts.background_color,
+            })) {}
 
             if (zgui.button("Render", .{})) {
                 self.render_opts.world.objects.clearRetainingCapacity();

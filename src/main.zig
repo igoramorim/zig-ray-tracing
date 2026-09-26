@@ -208,6 +208,7 @@ fn scene_runner(allocator: std.mem.Allocator, _: scene_fn, opts: Opts, state: *S
     cam.vup = Vec3{ 0.0, 1.0, 0.0 };
     cam.defocus_angle = opts.defocus_angle;
     cam.focus_dist = opts.focus_dist;
+    cam.background_color = opts.background_color;
     try cam.render(allocator, opts.world.hittable(), state);
 }
 
