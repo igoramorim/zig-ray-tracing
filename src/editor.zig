@@ -10,6 +10,7 @@ const material = @import("material.zig");
 const Material = material.Material;
 const Lambertian = material.Lambertian;
 const Metal = material.Metal;
+const Dielectric = material.Dielectric;
 
 const zgui = @import("zgui");
 
@@ -106,6 +107,10 @@ const default_mat_fuzz = 0.5;
 const max_mat_fuzz = 1.0;
 const min_mat_fuzz = 0.0;
 
+const default_mat_refraction = 1.0;
+const max_mat_refraction = 5.0;
+const min_mat_refraction = 0.0;
+
 const ObjOpts = struct {
     obj_type: ObjectType = undefined,
     obj_pos: [3]f32 = default_obj_pos,
@@ -114,6 +119,7 @@ const ObjOpts = struct {
     mat_type: MaterialType = undefined,
     mat_color: [3]f32 = default_mat_color,
     mat_fuzz: f32 = default_mat_fuzz,
+    mat_refraction: f32 = default_mat_refraction,
 };
 
 pub const Editor = struct {
@@ -219,6 +225,10 @@ pub const Editor = struct {
                         const metal = try self.allocator.create(Metal);
                         metal.* = Metal.init(obj.mat_color, obj.mat_fuzz);
                         mat.* = metal.mat();
+                    } else if (obj.mat_type == MaterialType.dielectric) {
+                        const dielectric = try self.allocator.create(Dielectric);
+                        dielectric.* = Dielectric{ .refractionIndex = obj.mat_refraction };
+                        mat.* = dielectric.mat();
                     }
 
                     if (obj.obj_type == ObjectType.sphere) {
@@ -346,6 +356,12 @@ pub const Editor = struct {
                         .v = &self.obj_opts.mat_fuzz,
                         .min = min_mat_fuzz,
                         .max = max_mat_fuzz,
+                    })) {}
+                } else if (material_selected == @intFromEnum(MaterialType.dielectric)) {
+                    if (zgui.sliderFloat("Refraction", .{
+                        .v = &self.obj_opts.mat_refraction,
+                        .min = min_mat_refraction,
+                        .max = max_mat_refraction,
                     })) {}
                 }
             }
