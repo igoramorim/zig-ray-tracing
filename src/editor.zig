@@ -3,6 +3,7 @@ const stderr = std.io.getStdErr().writer();
 
 const vec3 = @import("vec3.zig");
 const Point3 = vec3.Point3;
+const Vec3 = vec3.Vec3;
 const Hittable = @import("hittable.zig").Hittable;
 const HittableList = @import("hittable.zig").HittableList;
 const Sphere = @import("hittable.zig").Sphere;
@@ -258,7 +259,11 @@ pub const Editor = struct {
                         hittable.* = sphere.hittable();
                     } else if (obj.obj_type == ObjectType.plane) {
                         const quad = try self.allocator.create(Quad);
-                        quad.* = Quad.init(obj.obj_pos, obj.obj_pos2, obj.obj_pos3, mat.*);
+                        const center: Point3 = obj.obj_pos;
+                        const u = Vec3{ obj.obj_pos2[0], 0, 0 };
+                        const v = Vec3{ 0, obj.obj_pos2[1], 0 };
+                        const q: Point3 = center - (u / @as(Vec3, @splat(2.0))) - (v / @as(Vec3, @splat(2.0)));
+                        quad.* = Quad.init(q, u, v, mat.*);
                         hittable.* = quad.hittable();
                     } else if (obj.obj_type == ObjectType.cube) {
                         const box = try self.allocator.create(Box);
@@ -337,7 +342,7 @@ pub const Editor = struct {
                         .v = &self.obj_opts.obj_moving,
                     })) {}
 
-                    if (zgui.sliderFloat3("Position", .{
+                    if (zgui.sliderFloat3("Position (center)", .{
                         .v = &self.obj_opts.obj_pos,
                         .min = min_obj_pos,
                         .max = max_obj_pos,
@@ -357,20 +362,14 @@ pub const Editor = struct {
                         .max = max_obj_radius,
                     })) {}
                 } else if (object_selected.? == @intFromEnum(ObjectType.plane)) {
-                    if (zgui.sliderFloat3("Left Bottom Corner", .{
+                    if (zgui.sliderFloat3("Position (center)", .{
                         .v = &self.obj_opts.obj_pos,
                         .min = min_obj_pos,
                         .max = max_obj_pos,
                     })) {}
 
-                    if (zgui.sliderFloat3("U", .{
+                    if (zgui.sliderFloat3("Size (x, y)", .{
                         .v = &self.obj_opts.obj_pos2,
-                        .min = min_obj_pos,
-                        .max = max_obj_pos,
-                    })) {}
-
-                    if (zgui.sliderFloat3("V", .{
-                        .v = &self.obj_opts.obj_pos3,
                         .min = min_obj_pos,
                         .max = max_obj_pos,
                     })) {}
