@@ -15,6 +15,9 @@ const Lambertian = material.Lambertian;
 const Metal = material.Metal;
 const Dielectric = material.Dielectric;
 const DiffuseLight = material.DiffuseLight;
+const texture = @import("texture.zig");
+const Texture = texture.Texture;
+const Checker = texture.Checker;
 
 const zgui = @import("zgui");
 
@@ -72,6 +75,14 @@ const materials_label = [_][:0]const u8{
     "Isotropic",
 };
 
+var texture_selected: ?usize = null;
+const textures_label = [_][:0]const u8{
+    "None",
+    "Checker",
+    "Image",
+    "Noise",
+};
+
 pub const Opts = struct {
     width: u32,
     samples_per_pixel: u32 = default_samples_per_pixel,
@@ -100,6 +111,13 @@ const MaterialType = enum(u8) {
     isotropic,
 };
 
+const TextureType = enum(u8) {
+    none,
+    checker,
+    image,
+    noise,
+};
+
 const default_obj_pos = [3]f32{ 0.0, 0.0, 0.0 };
 const min_obj_pos = -50.0;
 const max_obj_pos = 50.0;
@@ -118,6 +136,10 @@ const default_mat_refraction = 1.0;
 const max_mat_refraction = 5.0;
 const min_mat_refraction = 0.0;
 
+const default_tex_checker_scale = 0.5;
+const max_tex_checker_scale = 100.0;
+const min_tex_checker_scale = 0.1;
+
 const ObjOpts = struct {
     obj_type: ObjectType = undefined,
     obj_pos: [3]f32 = default_obj_pos,
@@ -130,6 +152,11 @@ const ObjOpts = struct {
     mat_color: [3]f32 = default_mat_color,
     mat_fuzz: f32 = default_mat_fuzz,
     mat_refraction: f32 = default_mat_refraction,
+
+    tex_type: TextureType = TextureType.none,
+    tex_color: [3]f32 = default_mat_color,
+    tex_color2: [3]f32 = default_mat_color,
+    tex_checker_scale: f32 = default_tex_checker_scale,
 };
 
 pub const Editor = struct {
@@ -230,10 +257,21 @@ pub const Editor = struct {
                 for (self.objects.items) |obj| {
                     const mat = try self.allocator.create(Material);
                     const hittable = try self.allocator.create(Hittable);
+                    const tex = try self.allocator.create(Texture);
+
+                    if (obj.tex_type == TextureType.checker) {
+                        const checker = try self.allocator.create(Checker);
+                        checker.* = try Checker.init_color(self.allocator, obj.tex_checker_scale, obj.tex_color, obj.tex_color2);
+                        tex.* = checker.texture();
+                    }
 
                     if (obj.mat_type == MaterialType.lambertian) {
                         const lamb = try self.allocator.create(Lambertian);
-                        lamb.* = try Lambertian.init(self.allocator, obj.mat_color);
+                        if (obj.tex_type != TextureType.none) {
+                            lamb.* = Lambertian.init_texture(tex.*);
+                        } else {
+                            lamb.* = try Lambertian.init(self.allocator, obj.mat_color);
+                        }
                         mat.* = lamb.mat();
                     } else if (obj.mat_type == MaterialType.metal) {
                         const metal = try self.allocator.create(Metal);
@@ -245,7 +283,11 @@ pub const Editor = struct {
                         mat.* = dielectric.mat();
                     } else if (obj.mat_type == MaterialType.diffuse_light) {
                         const difflight = try self.allocator.create(DiffuseLight);
-                        difflight.* = try DiffuseLight.init_color(self.allocator, obj.mat_color);
+                        if (obj.tex_type != TextureType.none) {
+                            difflight.* = DiffuseLight.init_tex(tex.*);
+                        } else {
+                            difflight.* = try DiffuseLight.init_color(self.allocator, obj.mat_color);
+                        }
                         mat.* = difflight.mat();
                     }
 
@@ -319,6 +361,10 @@ pub const Editor = struct {
             //     Isotropic
             //         Color
             //         Texture
+            // Textures
+            //     x Checker
+            //     Image
+            //     Noise
             // BVH??
             // Translate / Rotate??
 
@@ -413,9 +459,11 @@ pub const Editor = struct {
             // material details
             if (material_selected != null) {
                 if (material_selected == @intFromEnum(MaterialType.lambertian)) {
-                    if (zgui.colorEdit3("Color", .{
-                        .col = &self.obj_opts.mat_color,
-                    })) {}
+                    if (texture_selected == null) {
+                        if (zgui.colorEdit3("Color", .{
+                            .col = &self.obj_opts.mat_color,
+                        })) {}
+                    }
                 } else if (material_selected == @intFromEnum(MaterialType.metal)) {
                     if (zgui.colorEdit3("Color", .{
                         .col = &self.obj_opts.mat_color,
@@ -439,10 +487,56 @@ pub const Editor = struct {
                 }
             }
 
+            // texture
+            if (object_selected != null and
+                (material_selected == @intFromEnum(MaterialType.lambertian) or
+                    material_selected == @intFromEnum(MaterialType.diffuse_light)))
+            {
+                const texture_label = if (texture_selected != null)
+                    textures_label[texture_selected.?]
+                else
+                    "Choose a texture";
+
+                if (zgui.beginCombo("Texture", .{ .preview_value = texture_label })) {
+                    defer zgui.endCombo();
+
+                    for (textures_label, 0..) |label, index| {
+                        const is_selected = (texture_selected == index);
+                        if (zgui.selectable(label, .{ .selected = is_selected })) {
+                            if (index == @intFromEnum(TextureType.none)) {
+                                texture_selected = null;
+                            } else {
+                                texture_selected = index;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // texture details
+            if (texture_selected != null) {
+                if (texture_selected == @intFromEnum(TextureType.checker)) {
+                    if (zgui.colorEdit3("Color 1", .{
+                        .col = &self.obj_opts.tex_color,
+                    })) {}
+
+                    if (zgui.colorEdit3("Color 2", .{
+                        .col = &self.obj_opts.tex_color2,
+                    })) {}
+
+                    if (zgui.sliderFloat("Scale", .{
+                        .v = &self.obj_opts.tex_checker_scale,
+                        .min = min_tex_checker_scale,
+                        .max = max_tex_checker_scale,
+                    })) {}
+                }
+            }
+
             if (object_selected != null and material_selected != null) {
                 if (zgui.button("Add", .{})) {
                     self.obj_opts.obj_type = @enumFromInt(object_selected.?);
                     self.obj_opts.mat_type = @enumFromInt(material_selected.?);
+                    self.obj_opts.tex_type = if (texture_selected) |tex| @enumFromInt(tex) else TextureType.none;
 
                     try self.objects.append(self.obj_opts);
 
@@ -464,7 +558,6 @@ pub const Editor = struct {
 
             // TODO: show the current objects to quick edits
         }
-
         return false;
     }
 };
