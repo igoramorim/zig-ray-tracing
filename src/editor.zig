@@ -7,6 +7,7 @@ const Hittable = @import("hittable.zig").Hittable;
 const HittableList = @import("hittable.zig").HittableList;
 const Sphere = @import("hittable.zig").Sphere;
 const Quad = @import("hittable.zig").Quad;
+const Box = @import("hittable.zig").Box;
 const material = @import("material.zig");
 const Material = material.Material;
 const Lambertian = material.Lambertian;
@@ -259,6 +260,10 @@ pub const Editor = struct {
                         const quad = try self.allocator.create(Quad);
                         quad.* = Quad.init(obj.obj_pos, obj.obj_pos2, obj.obj_pos3, mat.*);
                         hittable.* = quad.hittable();
+                    } else if (obj.obj_type == ObjectType.cube) {
+                        const box = try self.allocator.create(Box);
+                        box.* = Box.init(obj.obj_pos, obj.obj_pos2, mat.*);
+                        hittable.* = box.hittable();
                     }
 
                     try self.render_opts.world.add(hittable.*);
@@ -284,9 +289,9 @@ pub const Editor = struct {
             //         x U
             //         x V
             //         x Material
-            //     Box
-            //         Corners (Point A / B)
-            //         Material
+            //     x Box
+            //         x Corners (Point A / B)
+            //         x Material
             //     ConstantMedium
             //         Boundary (Hittable)
             //         Density
@@ -366,6 +371,18 @@ pub const Editor = struct {
 
                     if (zgui.sliderFloat3("V", .{
                         .v = &self.obj_opts.obj_pos3,
+                        .min = min_obj_pos,
+                        .max = max_obj_pos,
+                    })) {}
+                } else if (object_selected.? == @intFromEnum(ObjectType.cube)) {
+                    if (zgui.sliderFloat3("Start Point", .{
+                        .v = &self.obj_opts.obj_pos,
+                        .min = min_obj_pos,
+                        .max = max_obj_pos,
+                    })) {}
+
+                    if (zgui.sliderFloat3("End Point", .{
+                        .v = &self.obj_opts.obj_pos2,
                         .min = min_obj_pos,
                         .max = max_obj_pos,
                     })) {}
