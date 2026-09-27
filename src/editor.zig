@@ -267,7 +267,10 @@ pub const Editor = struct {
                         hittable.* = quad.hittable();
                     } else if (obj.obj_type == ObjectType.cube) {
                         const box = try self.allocator.create(Box);
-                        box.* = Box.init(obj.obj_pos, obj.obj_pos2, mat.*);
+                        const center: Point3 = obj.obj_pos;
+                        const a: Point3 = center - Vec3{ obj.obj_pos2[0] / 2, obj.obj_pos2[1] / 2, obj.obj_pos2[2] / 2 };
+                        const b: Point3 = center + Vec3{ obj.obj_pos2[0] / 2, obj.obj_pos2[1] / 2, obj.obj_pos2[2] / 2 };
+                        box.* = Box.init(a, b, mat.*);
                         hittable.* = box.hittable();
                     }
 
@@ -374,13 +377,13 @@ pub const Editor = struct {
                         .max = max_obj_pos,
                     })) {}
                 } else if (object_selected.? == @intFromEnum(ObjectType.cube)) {
-                    if (zgui.sliderFloat3("Start Point", .{
+                    if (zgui.sliderFloat3("Position (center)", .{
                         .v = &self.obj_opts.obj_pos,
                         .min = min_obj_pos,
                         .max = max_obj_pos,
                     })) {}
 
-                    if (zgui.sliderFloat3("End Point", .{
+                    if (zgui.sliderFloat3("Size (x, y, z)", .{
                         .v = &self.obj_opts.obj_pos2,
                         .min = min_obj_pos,
                         .max = max_obj_pos,
