@@ -132,6 +132,10 @@ const default_mat_fuzz = 0.5;
 const max_mat_fuzz = 1.0;
 const min_mat_fuzz = 0.0;
 
+const default_mat_diff_light_intensity = 1.0;
+const max_mat_diff_light_intensity = 10.0;
+const min_mat_diff_light_intensity = 1.0;
+
 const default_mat_refraction = 1.0;
 const max_mat_refraction = 5.0;
 const min_mat_refraction = 0.0;
@@ -152,6 +156,7 @@ const ObjOpts = struct {
     mat_color: [3]f32 = default_mat_color,
     mat_fuzz: f32 = default_mat_fuzz,
     mat_refraction: f32 = default_mat_refraction,
+    mat_diff_light_intensity: f32 = default_mat_diff_light_intensity,
 
     tex_type: TextureType = TextureType.none,
     tex_color: [3]f32 = default_mat_color,
@@ -286,7 +291,8 @@ pub const Editor = struct {
                         if (obj.tex_type != TextureType.none) {
                             difflight.* = DiffuseLight.init_tex(tex.*);
                         } else {
-                            difflight.* = try DiffuseLight.init_color(self.allocator, obj.mat_color);
+                            const color = obj.mat_color * @as(Vec3, @splat(obj.mat_diff_light_intensity));
+                            difflight.* = try DiffuseLight.init_color(self.allocator, color);
                         }
                         mat.* = difflight.mat();
                     }
@@ -483,6 +489,12 @@ pub const Editor = struct {
                 } else if (material_selected == @intFromEnum(MaterialType.diffuse_light)) {
                     if (zgui.colorEdit3("Color", .{
                         .col = &self.obj_opts.mat_color,
+                    })) {}
+
+                    if (zgui.sliderFloat("Intensity", .{
+                        .v = &self.obj_opts.mat_diff_light_intensity,
+                        .min = min_mat_diff_light_intensity,
+                        .max = max_mat_diff_light_intensity,
                     })) {}
                 }
             }
