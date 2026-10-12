@@ -262,6 +262,8 @@ pub const Editor = struct {
                 .col = &self.render_opts.background_color,
             })) {}
 
+            zgui.separator();
+
             if (zgui.button("Render", .{})) {
                 self.render_opts.world.objects.clearRetainingCapacity();
 
@@ -340,7 +342,7 @@ pub const Editor = struct {
             zgui.text("{d}%", .{self.render_progress.*});
         }
 
-        if (zgui.begin("Objects", .{})) {
+        if (zgui.begin("New Object", .{})) {
             defer zgui.end();
 
             // Objects
@@ -568,6 +570,8 @@ pub const Editor = struct {
                 }
             }
 
+            zgui.separator();
+
             if (object_selected != null and material_selected != null) {
                 if (zgui.button("Add", .{})) {
                     self.obj_opts.obj_type = @enumFromInt(object_selected.?);
@@ -583,17 +587,115 @@ pub const Editor = struct {
                     std.debug.print("\n", .{});
                 }
             }
+        }
+
+        if (zgui.begin("Current Objects", .{})) {
+            defer zgui.end();
+
+            for (self.objects.items, 0..) |*obj, i| {
+                zgui.pushIntId(@intCast(i));
+
+                // object
+                if (obj.obj_type == ObjectType.sphere) {
+                    zgui.text("Sphere", .{});
+                    if (zgui.checkbox("Moving", .{
+                        .v = &obj.obj_moving,
+                    })) {}
+
+                    if (zgui.sliderFloat3("Position (center)", .{
+                        .v = &obj.obj_pos,
+                        .min = min_obj_pos,
+                        .max = max_obj_pos,
+                    })) {}
+
+                    if (obj.obj_moving) {
+                        if (zgui.sliderFloat3("Position 2", .{
+                            .v = &obj.obj_pos2,
+                            .min = min_obj_pos,
+                            .max = max_obj_pos,
+                        })) {}
+                    }
+
+                    if (zgui.sliderFloat("Radius", .{
+                        .v = &obj.obj_radius,
+                        .min = min_obj_radius,
+                        .max = max_obj_radius,
+                    })) {}
+                } // TODO: plane and cube
+
+                // material
+                if (obj.mat_type == MaterialType.lambertian) {
+                    if (texture_selected == null) {
+                        if (zgui.colorEdit3("Color", .{
+                            .col = &obj.mat_color,
+                        })) {}
+                    }
+                } else if (obj.mat_type == MaterialType.metal) {
+                    if (zgui.colorEdit3("Color", .{
+                        .col = &obj.mat_color,
+                    })) {}
+
+                    if (zgui.sliderFloat("Fuzz", .{
+                        .v = &obj.mat_fuzz,
+                        .min = min_mat_fuzz,
+                        .max = max_mat_fuzz,
+                    })) {}
+                } else if (obj.mat_type == MaterialType.dielectric) {
+                    if (zgui.sliderFloat("Refraction", .{
+                        .v = &obj.mat_refraction,
+                        .min = min_mat_refraction,
+                        .max = max_mat_refraction,
+                    })) {}
+                } else if (obj.mat_type == MaterialType.diffuse_light) {
+                    if (zgui.colorEdit3("Color", .{
+                        .col = &obj.mat_color,
+                    })) {}
+
+                    if (zgui.sliderFloat("Intensity", .{
+                        .v = &obj.mat_diff_light_intensity,
+                        .min = min_mat_diff_light_intensity,
+                        .max = max_mat_diff_light_intensity,
+                    })) {}
+                }
+
+                // texture
+                if (obj.tex_type == TextureType.checker) {
+                    if (zgui.colorEdit3("Color 1", .{
+                        .col = &obj.tex_color,
+                    })) {}
+
+                    if (zgui.colorEdit3("Color 2", .{
+                        .col = &obj.tex_color2,
+                    })) {}
+
+                    if (zgui.sliderFloat("Scale", .{
+                        .v = &obj.tex_checker_scale,
+                        .min = min_tex_checker_scale,
+                        .max = max_tex_checker_scale,
+                    })) {}
+                } else if (obj.tex_type == TextureType.noise) {
+                    if (zgui.sliderFloat("Scale", .{
+                        .v = &obj.tex_noise_scale,
+                        .min = min_tex_noise_scale,
+                        .max = max_tex_noise_scale,
+                    })) {}
+                }
+
+                if (zgui.button("Delete", .{})) {
+                    _ = self.objects.orderedRemove(i);
+                }
+                zgui.separator();
+
+                zgui.popId();
+            }
 
             if (self.objects.items.len > 0) {
-                if (zgui.button("Clear", .{})) {
+                if (zgui.button("Clear All", .{})) {
                     self.objects.clearRetainingCapacity();
                 }
             }
-
-            zgui.separator();
-
-            // TODO: show the current objects to quick edits
         }
+
         return false;
     }
 };
