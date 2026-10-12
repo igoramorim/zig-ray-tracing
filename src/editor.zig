@@ -18,6 +18,7 @@ const DiffuseLight = material.DiffuseLight;
 const texture = @import("texture.zig");
 const Texture = texture.Texture;
 const Checker = texture.Checker;
+const Noise = texture.Noise;
 
 const zgui = @import("zgui");
 
@@ -80,7 +81,7 @@ const textures_label = [_][:0]const u8{
     "None",
     "Checker",
     // "Image",
-    // "Noise",
+    "Noise",
 };
 
 pub const Opts = struct {
@@ -115,7 +116,7 @@ const TextureType = enum(u8) {
     none,
     checker,
     // image,
-    // noise,
+    noise,
 };
 
 const default_obj_pos = [3]f32{ 0.0, 0.0, 0.0 };
@@ -144,6 +145,10 @@ const default_tex_checker_scale = 0.5;
 const max_tex_checker_scale = 100.0;
 const min_tex_checker_scale = 0.1;
 
+const default_tex_noise_scale = 1.0;
+const max_tex_noise_scale = 10.0;
+const min_tex_noise_scale = 0.1;
+
 const ObjOpts = struct {
     obj_type: ObjectType = undefined,
     obj_pos: [3]f32 = default_obj_pos,
@@ -162,6 +167,7 @@ const ObjOpts = struct {
     tex_color: [3]f32 = default_mat_color,
     tex_color2: [3]f32 = default_mat_color,
     tex_checker_scale: f32 = default_tex_checker_scale,
+    tex_noise_scale: f32 = default_tex_noise_scale,
 };
 
 pub const Editor = struct {
@@ -264,12 +270,18 @@ pub const Editor = struct {
                     const hittable = try self.allocator.create(Hittable);
                     const tex = try self.allocator.create(Texture);
 
+                    // texture
                     if (obj.tex_type == TextureType.checker) {
                         const checker = try self.allocator.create(Checker);
                         checker.* = try Checker.init_color(self.allocator, obj.tex_checker_scale, obj.tex_color, obj.tex_color2);
                         tex.* = checker.texture();
+                    } else if (obj.tex_type == TextureType.noise) {
+                        const noise = try self.allocator.create(Noise);
+                        noise.* = Noise.init(obj.tex_noise_scale);
+                        tex.* = noise.texture();
                     }
 
+                    // material
                     if (obj.mat_type == MaterialType.lambertian) {
                         const lamb = try self.allocator.create(Lambertian);
                         if (obj.tex_type != TextureType.none) {
@@ -297,6 +309,7 @@ pub const Editor = struct {
                         mat.* = difflight.mat();
                     }
 
+                    // object
                     if (obj.obj_type == ObjectType.sphere) {
                         const sphere = try self.allocator.create(Sphere);
                         if (obj.obj_moving) {
@@ -349,7 +362,7 @@ pub const Editor = struct {
             //         Density
             //         Color / Texture
             // Materials
-            //     Lambertian
+            //     x Lambertian
             //         x Color
             //         x Texture
             //     x Metal
@@ -357,7 +370,7 @@ pub const Editor = struct {
             //         x Fuzz
             //     x Dielectric
             //         x Refraction
-            //     DiffuseLight
+            //     x DiffuseLight
             //         x Color
             //         x Texture
             //     Isotropic
@@ -366,7 +379,7 @@ pub const Editor = struct {
             // Textures
             //     x Checker
             //     Image
-            //     Noise
+            //     x Noise
             // BVH??
             // Translate / Rotate??
 
@@ -528,7 +541,10 @@ pub const Editor = struct {
             }
 
             // texture details
-            if (texture_selected != null) {
+            if (texture_selected != null and
+                (material_selected == @intFromEnum(MaterialType.lambertian) or
+                    material_selected == @intFromEnum(MaterialType.diffuse_light)))
+            {
                 if (texture_selected == @intFromEnum(TextureType.checker)) {
                     if (zgui.colorEdit3("Color 1", .{
                         .col = &self.obj_opts.tex_color,
@@ -542,6 +558,12 @@ pub const Editor = struct {
                         .v = &self.obj_opts.tex_checker_scale,
                         .min = min_tex_checker_scale,
                         .max = max_tex_checker_scale,
+                    })) {}
+                } else if (texture_selected == @intFromEnum(TextureType.noise)) {
+                    if (zgui.sliderFloat("Scale", .{
+                        .v = &self.obj_opts.tex_noise_scale,
+                        .min = min_tex_noise_scale,
+                        .max = max_tex_noise_scale,
                     })) {}
                 }
             }
