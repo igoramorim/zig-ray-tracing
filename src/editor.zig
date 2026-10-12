@@ -63,7 +63,7 @@ const objects_label = [_][:0]const u8{
     "Sphere",
     "Plane",
     "Cube",
-    "Constant Medium",
+    // "Constant Medium",
 };
 
 var material_selected: ?usize = null;
@@ -72,15 +72,15 @@ const materials_label = [_][:0]const u8{
     "Metal",
     "Dielectric",
     "Diffuse Light",
-    "Isotropic",
+    // "Isotropic",
 };
 
 var texture_selected: ?usize = null;
 const textures_label = [_][:0]const u8{
     "None",
     "Checker",
-    "Image",
-    "Noise",
+    // "Image",
+    // "Noise",
 };
 
 pub const Opts = struct {
@@ -108,14 +108,14 @@ const MaterialType = enum(u8) {
     metal,
     dielectric,
     diffuse_light,
-    isotropic,
+    // isotropic,
 };
 
 const TextureType = enum(u8) {
     none,
     checker,
-    image,
-    noise,
+    // image,
+    // noise,
 };
 
 const default_obj_pos = [3]f32{ 0.0, 0.0, 0.0 };
@@ -351,7 +351,7 @@ pub const Editor = struct {
             // Materials
             //     Lambertian
             //         x Color
-            //         Texture
+            //         x Texture
             //     x Metal
             //         x Color
             //         x Fuzz
@@ -359,7 +359,7 @@ pub const Editor = struct {
             //         x Refraction
             //     DiffuseLight
             //         x Color
-            //         Texture
+            //         x Texture
             //     Isotropic
             //         Color
             //         Texture
