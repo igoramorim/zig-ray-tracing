@@ -19,6 +19,7 @@ const texture = @import("texture.zig");
 const Texture = texture.Texture;
 const Checker = texture.Checker;
 const Noise = texture.Noise;
+const Image = texture.Image;
 
 const zgui = @import("zgui");
 
@@ -80,8 +81,13 @@ var texture_selected: ?usize = null;
 const textures_label = [_][:0]const u8{
     "None",
     "Checker",
-    // "Image",
+    "Image",
     "Noise",
+};
+
+const textures_image_label = [_][:0]const u8{
+    "assets/textures/earth.jpg",
+    "assets/textures/uv.png",
 };
 
 pub const Opts = struct {
@@ -115,7 +121,7 @@ const MaterialType = enum(u8) {
 const TextureType = enum(u8) {
     none,
     checker,
-    // image,
+    image,
     noise,
 };
 
@@ -168,6 +174,7 @@ const ObjOpts = struct {
     tex_color2: [3]f32 = default_mat_color,
     tex_checker_scale: f32 = default_tex_checker_scale,
     tex_noise_scale: f32 = default_tex_noise_scale,
+    tex_image_path: [:0]const u8 = textures_image_label[0],
 };
 
 pub const Editor = struct {
@@ -281,6 +288,10 @@ pub const Editor = struct {
                         const noise = try self.allocator.create(Noise);
                         noise.* = Noise.init(obj.tex_noise_scale);
                         tex.* = noise.texture();
+                    } else if (obj.tex_type == TextureType.image) {
+                        const tex_img = try self.allocator.create(Image);
+                        tex_img.* = try Image.init(self.allocator, obj.tex_image_path);
+                        tex.* = tex_img.texture();
                     }
 
                     // material
@@ -380,7 +391,7 @@ pub const Editor = struct {
             //         Texture
             // Textures
             //     x Checker
-            //     Image
+            //     x Image
             //     x Noise
             // BVH??
             // Translate / Rotate??
@@ -567,6 +578,17 @@ pub const Editor = struct {
                         .min = min_tex_noise_scale,
                         .max = max_tex_noise_scale,
                     })) {}
+                } else if (texture_selected == @intFromEnum(TextureType.image)) {
+                    if (zgui.beginCombo("Image", .{ .preview_value = self.obj_opts.tex_image_path })) {
+                        defer zgui.endCombo();
+
+                        for (textures_image_label) |label| {
+                            const is_selected = (std.mem.eql(u8, self.obj_opts.tex_image_path, label));
+                            if (zgui.selectable(label, .{ .selected = is_selected })) {
+                                self.obj_opts.tex_image_path = label;
+                            }
+                        }
+                    }
                 }
             }
 
@@ -711,6 +733,17 @@ pub const Editor = struct {
                         .min = min_tex_noise_scale,
                         .max = max_tex_noise_scale,
                     })) {}
+                } else if (obj.tex_type == TextureType.image) {
+                    if (zgui.beginCombo("Image", .{ .preview_value = obj.tex_image_path })) {
+                        defer zgui.endCombo();
+
+                        for (textures_image_label) |label| {
+                            const is_selected = (std.mem.eql(u8, obj.tex_image_path, label));
+                            if (zgui.selectable(label, .{ .selected = is_selected })) {
+                                obj.tex_image_path = label;
+                            }
+                        }
+                    }
                 }
 
                 if (zgui.button("Delete", .{})) {
