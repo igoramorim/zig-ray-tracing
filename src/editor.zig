@@ -621,7 +621,39 @@ pub const Editor = struct {
                         .min = min_obj_radius,
                         .max = max_obj_radius,
                     })) {}
-                } // TODO: plane and cube
+                } else if (obj.obj_type == ObjectType.plane) {
+                    zgui.text("Plane", .{});
+                    if (zgui.sliderFloat3("Left Bottom Corner", .{
+                        .v = &obj.obj_pos,
+                        .min = min_obj_pos,
+                        .max = max_obj_pos,
+                    })) {}
+
+                    if (zgui.sliderFloat3("U", .{
+                        .v = &obj.obj_pos2,
+                        .min = min_obj_pos,
+                        .max = max_obj_pos,
+                    })) {}
+
+                    if (zgui.sliderFloat3("V", .{
+                        .v = &obj.obj_pos3,
+                        .min = min_obj_pos,
+                        .max = max_obj_pos,
+                    })) {}
+                } else if (obj.obj_type == ObjectType.cube) {
+                    zgui.text("Cube", .{});
+                    if (zgui.sliderFloat3("Position (center)", .{
+                        .v = &obj.obj_pos,
+                        .min = min_obj_pos,
+                        .max = max_obj_pos,
+                    })) {}
+
+                    if (zgui.sliderFloat3("Size (x, y, z)", .{
+                        .v = &obj.obj_pos2,
+                        .min = min_obj_pos,
+                        .max = max_obj_pos,
+                    })) {}
+                }
 
                 // material
                 if (obj.mat_type == MaterialType.lambertian) {
