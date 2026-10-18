@@ -272,6 +272,7 @@ pub const Editor = struct {
             zgui.separator();
 
             if (zgui.button("Render", .{})) {
+                // TODO: free memory from the past render
                 self.render_opts.world.objects.clearRetainingCapacity();
 
                 for (self.objects.items) |obj| {
