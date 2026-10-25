@@ -42,14 +42,6 @@ const window_height = 960;
 const canvas_width = 800;
 const canvas_height = 800;
 
-// TODO:
-// - (zig) Remove the hittable() material() methods. Add an attr that holds it and it is initialized in init()
-// - (zig) Parallelize
-// - Add other types of lights (directional and spot)
-// - Cast shadows
-// - Scale transformation
-// - Rotate in X and Z axis
-
 pub fn main() !void {
     try zglfw.init();
     defer zglfw.terminate();

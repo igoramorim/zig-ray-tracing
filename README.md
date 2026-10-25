@@ -13,4 +13,12 @@ Run
 ```bash
 ./zig-out/bin/zrt
 ```
-![](/images/gui.png)
+![](/images/editor.png)
+
+## TODO
+[] Add another type of light
+[] Cast shadows
+[] Rotation in X and Z
+[] Export render as image
+[] Load .obj models
+[] Live render (remove the Render button)
