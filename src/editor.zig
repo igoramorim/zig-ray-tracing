@@ -1,5 +1,4 @@
 const std = @import("std");
-const stderr = std.io.getStdErr().writer();
 
 const vec3 = @import("vec3.zig");
 const Point3 = vec3.Point3;
@@ -383,46 +382,6 @@ pub const Editor = struct {
         if (zgui.begin("New Object", .{})) {
             defer zgui.end();
 
-            // Objects
-            //     x Sphere
-            //         x Center (Position)
-            //         x Radius
-            //         x Moving? Center1 / Center2
-            //         x Material
-            //     x Plane (Quad)
-            //         x Corner (Point)
-            //         x U
-            //         x V
-            //         x Material
-            //     x Box
-            //         x Corners (Point A / B)
-            //         x Material
-            //     x ConstantMedium
-            //         x Boundary (Hittable)
-            //         x Density
-            //         x Color / Texture
-            // Materials
-            //     x Lambertian
-            //         x Color
-            //         x Texture
-            //     x Metal
-            //         x Color
-            //         x Fuzz
-            //     x Dielectric
-            //         x Refraction
-            //     x DiffuseLight
-            //         x Color
-            //         x Texture
-            //     x Isotropic
-            //         x Color
-            //         x Texture
-            // Textures
-            //     x Checker
-            //     x Image
-            //     x Noise
-            // BVH??
-            // Translate / x Rotate Y
-
             // object
             const object_label = if (object_selected != null)
                 objects_label[object_selected.?]
@@ -650,12 +609,6 @@ pub const Editor = struct {
                     self.obj_opts.tex_type = if (texture_selected) |tex| @enumFromInt(tex) else TextureType.none;
 
                     try self.objects.append(self.obj_opts);
-
-                    std.debug.print("add:\n", .{});
-                    for (self.objects.items) |obj| {
-                        std.debug.print("{any}\n\n", .{obj});
-                    }
-                    std.debug.print("\n", .{});
                 }
             }
         }
