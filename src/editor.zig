@@ -9,6 +9,7 @@ const HittableList = @import("hittable.zig").HittableList;
 const Sphere = @import("hittable.zig").Sphere;
 const Quad = @import("hittable.zig").Quad;
 const Box = @import("hittable.zig").Box;
+const ConstantMedium = @import("hittable.zig").ConstantMedium;
 const material = @import("material.zig");
 const Material = material.Material;
 const Lambertian = material.Lambertian;
@@ -65,7 +66,6 @@ const objects_label = [_][:0]const u8{
     "Sphere",
     "Plane",
     "Cube",
-    // "Constant Medium",
 };
 
 var material_selected: ?usize = null;
@@ -74,7 +74,6 @@ const materials_label = [_][:0]const u8{
     "Metal",
     "Dielectric",
     "Diffuse Light",
-    // "Isotropic",
 };
 
 var texture_selected: ?usize = null;
@@ -107,7 +106,6 @@ const ObjectType = enum(u8) {
     sphere,
     plane,
     cube,
-    constant_medium,
 };
 
 const MaterialType = enum(u8) {
@@ -115,7 +113,6 @@ const MaterialType = enum(u8) {
     metal,
     dielectric,
     diffuse_light,
-    // isotropic,
 };
 
 const TextureType = enum(u8) {
@@ -132,6 +129,10 @@ const max_obj_pos = 50.0;
 const default_obj_radius = 2.0;
 const min_obj_radius = 1.0;
 const max_obj_radius = 90.0;
+
+const default_obj_const_medium_density = 0.01;
+const min_obj_const_medium_density = 0.01;
+const max_obj_const_medium_density = 1.0;
 
 const default_mat_color = [3]f32{ 1.0, 0.0, 0.0 };
 
@@ -162,6 +163,9 @@ const ObjOpts = struct {
     obj_pos3: [3]f32 = default_obj_pos,
     obj_radius: f32 = default_obj_radius,
     obj_moving: bool = false,
+    obj_const_medium: bool = false,
+    obj_const_medium_color: [3]f32 = default_mat_color,
+    obj_const_medium_density: f32 = default_obj_const_medium_density,
 
     mat_type: MaterialType = undefined,
     mat_color: [3]f32 = default_mat_color,
@@ -331,6 +335,11 @@ pub const Editor = struct {
                         } else {
                             sphere.* = Sphere.init(obj.obj_pos, obj.obj_radius, mat.*);
                         }
+                        if (obj.obj_const_medium) {
+                            const const_med = try self.allocator.create(ConstantMedium);
+                            const_med.* = try ConstantMedium.init_color(self.allocator, sphere.hittable(), obj.obj_const_medium_density, obj.obj_const_medium_color);
+                            try self.render_opts.world.add(const_med.hittable());
+                        }
                         hittable.* = sphere.hittable();
                     } else if (obj.obj_type == ObjectType.plane) {
                         const quad = try self.allocator.create(Quad);
@@ -342,6 +351,11 @@ pub const Editor = struct {
                         const a: Point3 = center - Vec3{ obj.obj_pos2[0] / 2, obj.obj_pos2[1] / 2, obj.obj_pos2[2] / 2 };
                         const b: Point3 = center + Vec3{ obj.obj_pos2[0] / 2, obj.obj_pos2[1] / 2, obj.obj_pos2[2] / 2 };
                         box.* = Box.init(a, b, mat.*);
+                        if (obj.obj_const_medium) {
+                            const const_med = try self.allocator.create(ConstantMedium);
+                            const_med.* = try ConstantMedium.init_color(self.allocator, box.hittable(), obj.obj_const_medium_density, obj.obj_const_medium_color);
+                            try self.render_opts.world.add(const_med.hittable());
+                        }
                         hittable.* = box.hittable();
                     }
 
@@ -371,10 +385,10 @@ pub const Editor = struct {
             //     x Box
             //         x Corners (Point A / B)
             //         x Material
-            //     ConstantMedium
-            //         Boundary (Hittable)
-            //         Density
-            //         Color / Texture
+            //     x ConstantMedium
+            //         x Boundary (Hittable)
+            //         x Density
+            //         x Color / Texture
             // Materials
             //     x Lambertian
             //         x Color
@@ -387,9 +401,9 @@ pub const Editor = struct {
             //     x DiffuseLight
             //         x Color
             //         x Texture
-            //     Isotropic
-            //         Color
-            //         Texture
+            //     x Isotropic
+            //         x Color
+            //         x Texture
             // Textures
             //     x Checker
             //     x Image
@@ -495,12 +509,12 @@ pub const Editor = struct {
             if (material_selected != null) {
                 if (material_selected == @intFromEnum(MaterialType.lambertian)) {
                     if (texture_selected == null) {
-                        if (zgui.colorEdit3("Color", .{
+                        if (zgui.colorEdit3("Color##mat_color", .{
                             .col = &self.obj_opts.mat_color,
                         })) {}
                     }
                 } else if (material_selected == @intFromEnum(MaterialType.metal)) {
-                    if (zgui.colorEdit3("Color", .{
+                    if (zgui.colorEdit3("Color##mat_color", .{
                         .col = &self.obj_opts.mat_color,
                     })) {}
 
@@ -516,7 +530,7 @@ pub const Editor = struct {
                         .max = max_mat_refraction,
                     })) {}
                 } else if (material_selected == @intFromEnum(MaterialType.diffuse_light)) {
-                    if (zgui.colorEdit3("Color", .{
+                    if (zgui.colorEdit3("Color##mat_color", .{
                         .col = &self.obj_opts.mat_color,
                     })) {}
 
@@ -593,6 +607,22 @@ pub const Editor = struct {
                 }
             }
 
+            if (object_selected != null and object_selected != @intFromEnum(ObjectType.plane) and zgui.checkbox("Constant Medium", .{
+                .v = &self.obj_opts.obj_const_medium,
+            })) {}
+
+            if (self.obj_opts.obj_const_medium) {
+                if (zgui.colorEdit3("Color##const_med_color", .{
+                    .col = &self.obj_opts.obj_const_medium_color,
+                })) {}
+
+                if (zgui.sliderFloat("Density", .{
+                    .v = &self.obj_opts.obj_const_medium_density,
+                    .min = min_obj_const_medium_density,
+                    .max = max_obj_const_medium_density,
+                })) {}
+            }
+
             zgui.separator();
 
             if (object_selected != null and material_selected != null) {
@@ -620,7 +650,7 @@ pub const Editor = struct {
 
                 // object
                 if (obj.obj_type == ObjectType.sphere) {
-                    zgui.text("Sphere", .{});
+                    zgui.text("Sphere #{d}", .{i});
                     if (zgui.checkbox("Moving", .{
                         .v = &obj.obj_moving,
                     })) {}
@@ -645,7 +675,7 @@ pub const Editor = struct {
                         .max = max_obj_radius,
                     })) {}
                 } else if (obj.obj_type == ObjectType.plane) {
-                    zgui.text("Plane", .{});
+                    zgui.text("Plane #{d}", .{i});
                     if (zgui.sliderFloat3("Left Bottom Corner", .{
                         .v = &obj.obj_pos,
                         .min = min_obj_pos,
@@ -664,7 +694,7 @@ pub const Editor = struct {
                         .max = max_obj_pos,
                     })) {}
                 } else if (obj.obj_type == ObjectType.cube) {
-                    zgui.text("Cube", .{});
+                    zgui.text("Cube #{d}", .{i});
                     if (zgui.sliderFloat3("Position (center)", .{
                         .v = &obj.obj_pos,
                         .min = min_obj_pos,
@@ -679,14 +709,15 @@ pub const Editor = struct {
                 }
 
                 // material
+                zgui.text("Material", .{});
                 if (obj.mat_type == MaterialType.lambertian) {
                     if (texture_selected == null) {
-                        if (zgui.colorEdit3("Color", .{
+                        if (zgui.colorEdit3("Color##mat_color", .{
                             .col = &obj.mat_color,
                         })) {}
                     }
                 } else if (obj.mat_type == MaterialType.metal) {
-                    if (zgui.colorEdit3("Color", .{
+                    if (zgui.colorEdit3("Color##mat_color", .{
                         .col = &obj.mat_color,
                     })) {}
 
@@ -702,7 +733,7 @@ pub const Editor = struct {
                         .max = max_mat_refraction,
                     })) {}
                 } else if (obj.mat_type == MaterialType.diffuse_light) {
-                    if (zgui.colorEdit3("Color", .{
+                    if (zgui.colorEdit3("Color##mat_color", .{
                         .col = &obj.mat_color,
                     })) {}
 
@@ -714,37 +745,53 @@ pub const Editor = struct {
                 }
 
                 // texture
-                if (obj.tex_type == TextureType.checker) {
-                    if (zgui.colorEdit3("Color 1", .{
-                        .col = &obj.tex_color,
-                    })) {}
+                if (obj.tex_type != TextureType.none) {
+                    zgui.text("Texture", .{});
+                    if (obj.tex_type == TextureType.checker) {
+                        if (zgui.colorEdit3("Color 1", .{
+                            .col = &obj.tex_color,
+                        })) {}
 
-                    if (zgui.colorEdit3("Color 2", .{
-                        .col = &obj.tex_color2,
-                    })) {}
+                        if (zgui.colorEdit3("Color 2", .{
+                            .col = &obj.tex_color2,
+                        })) {}
 
-                    if (zgui.sliderFloat("Scale", .{
-                        .v = &obj.tex_checker_scale,
-                        .min = min_tex_checker_scale,
-                        .max = max_tex_checker_scale,
-                    })) {}
-                } else if (obj.tex_type == TextureType.noise) {
-                    if (zgui.sliderFloat("Scale", .{
-                        .v = &obj.tex_noise_scale,
-                        .min = min_tex_noise_scale,
-                        .max = max_tex_noise_scale,
-                    })) {}
-                } else if (obj.tex_type == TextureType.image) {
-                    if (zgui.beginCombo("Image", .{ .preview_value = obj.tex_image_path })) {
-                        defer zgui.endCombo();
+                        if (zgui.sliderFloat("Scale", .{
+                            .v = &obj.tex_checker_scale,
+                            .min = min_tex_checker_scale,
+                            .max = max_tex_checker_scale,
+                        })) {}
+                    } else if (obj.tex_type == TextureType.noise) {
+                        if (zgui.sliderFloat("Scale", .{
+                            .v = &obj.tex_noise_scale,
+                            .min = min_tex_noise_scale,
+                            .max = max_tex_noise_scale,
+                        })) {}
+                    } else if (obj.tex_type == TextureType.image) {
+                        if (zgui.beginCombo("Image", .{ .preview_value = obj.tex_image_path })) {
+                            defer zgui.endCombo();
 
-                        for (textures_image_label) |label| {
-                            const is_selected = (std.mem.eql(u8, obj.tex_image_path, label));
-                            if (zgui.selectable(label, .{ .selected = is_selected })) {
-                                obj.tex_image_path = label;
+                            for (textures_image_label) |label| {
+                                const is_selected = (std.mem.eql(u8, obj.tex_image_path, label));
+                                if (zgui.selectable(label, .{ .selected = is_selected })) {
+                                    obj.tex_image_path = label;
+                                }
                             }
                         }
                     }
+                }
+
+                if (obj.obj_const_medium) {
+                    zgui.text("Constant Medium", .{});
+                    if (zgui.colorEdit3("Color##const_med_color", .{
+                        .col = &obj.obj_const_medium_color,
+                    })) {}
+
+                    if (zgui.sliderFloat("Density", .{
+                        .v = &obj.obj_const_medium_density,
+                        .min = min_obj_const_medium_density,
+                        .max = max_obj_const_medium_density,
+                    })) {}
                 }
 
                 if (zgui.button("Delete", .{})) {
@@ -757,7 +804,7 @@ pub const Editor = struct {
 
             if (self.objects.items.len > 0) {
                 if (zgui.button("Clear All", .{})) {
-                    self.objects.clearRetainingCapacity();
+                    self.objects.clearAndFree();
                 }
             }
         }
