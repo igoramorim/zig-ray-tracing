@@ -10,6 +10,7 @@ const Sphere = @import("hittable.zig").Sphere;
 const Quad = @import("hittable.zig").Quad;
 const Box = @import("hittable.zig").Box;
 const ConstantMedium = @import("hittable.zig").ConstantMedium;
+const RotateY = @import("hittable.zig").RotateY;
 const material = @import("material.zig");
 const Material = material.Material;
 const Lambertian = material.Lambertian;
@@ -134,6 +135,10 @@ const default_obj_const_medium_density = 0.01;
 const min_obj_const_medium_density = 0.01;
 const max_obj_const_medium_density = 1.0;
 
+const default_obj_rot = [3]f32{ 0.0, 0.0, 0.0 };
+const min_obj_rot = 0.0;
+const max_obj_rot = 360.0;
+
 const default_mat_color = [3]f32{ 1.0, 0.0, 0.0 };
 
 const default_mat_fuzz = 0.5;
@@ -162,6 +167,7 @@ const ObjOpts = struct {
     obj_pos2: [3]f32 = default_obj_pos,
     obj_pos3: [3]f32 = default_obj_pos,
     obj_radius: f32 = default_obj_radius,
+    obj_rot: [3]f32 = default_obj_rot,
     obj_moving: bool = false,
     obj_const_medium: bool = false,
     obj_const_medium_color: [3]f32 = default_mat_color,
@@ -359,6 +365,12 @@ pub const Editor = struct {
                         hittable.* = box.hittable();
                     }
 
+                    if (obj.obj_rot[1] != 0) {
+                        const rotated = try self.allocator.create(RotateY);
+                        rotated.* = RotateY.init(hittable.*, obj.obj_rot[1]);
+                        hittable.* = rotated.hittable();
+                    }
+
                     try self.render_opts.world.add(hittable.*);
                 }
 
@@ -409,7 +421,7 @@ pub const Editor = struct {
             //     x Image
             //     x Noise
             // BVH??
-            // Translate / Rotate??
+            // Translate / x Rotate Y
 
             // object
             const object_label = if (object_selected != null)
@@ -484,6 +496,12 @@ pub const Editor = struct {
                         .max = max_obj_pos,
                     })) {}
                 }
+
+                if (zgui.sliderFloat3("Rotation", .{
+                    .v = &self.obj_opts.obj_rot,
+                    .min = min_obj_rot,
+                    .max = max_obj_rot,
+                })) {}
             }
 
             // material
@@ -707,6 +725,12 @@ pub const Editor = struct {
                         .max = max_obj_pos,
                     })) {}
                 }
+
+                if (zgui.sliderFloat3("Rotation", .{
+                    .v = &obj.obj_rot,
+                    .min = min_obj_rot,
+                    .max = max_obj_rot,
+                })) {}
 
                 // material
                 zgui.text("Material", .{});
