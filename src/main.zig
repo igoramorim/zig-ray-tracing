@@ -66,7 +66,12 @@ pub fn main() !void {
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const gpa_allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    defer {
+        const deinit = gpa.deinit();
+        if (deinit == .leak) {
+            std.debug.print("memory leak\n", .{});
+        }
+    }
 
     var arena = std.heap.ArenaAllocator.init(gpa_allocator);
     defer arena.deinit();

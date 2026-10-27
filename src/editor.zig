@@ -188,6 +188,7 @@ const ObjOpts = struct {
 
 pub const Editor = struct {
     allocator: std.mem.Allocator,
+    render_arena: ?std.heap.ArenaAllocator = null,
     render_opts: Opts,
     render_progress: *u8 = undefined,
 
@@ -198,7 +199,6 @@ pub const Editor = struct {
         return .{
             .allocator = allocator,
             .render_opts = .{
-                .world = HittableList.init(allocator),
                 .width = canvas_width,
             },
             .render_progress = render_progress,
@@ -207,8 +207,12 @@ pub const Editor = struct {
         };
     }
 
-    pub fn deinit(_: *Editor) void {
-        // TODO: clean / deinit stuff
+    pub fn deinit(self: *Editor) void {
+        if (self.render_arena) |*arena| {
+            arena.deinit();
+        }
+        self.objects.deinit();
+        self.render_opts.world.clear();
     }
 
     pub fn render(self: *Editor, width: u32, height: u32) !bool {
@@ -281,91 +285,96 @@ pub const Editor = struct {
             zgui.separator();
 
             if (zgui.button("Render", .{})) {
-                // TODO: free memory from the past render
-                self.render_opts.world.objects.clearAndFree();
+                if (self.render_arena) |*arena| {
+                    arena.deinit();
+                }
+
+                self.render_arena = std.heap.ArenaAllocator.init(self.allocator);
+                const arena_allocator = self.render_arena.?.allocator();
+                self.render_opts.world = HittableList.init(arena_allocator);
 
                 for (self.objects.items) |obj| {
-                    const mat = try self.allocator.create(Material);
-                    const hittable = try self.allocator.create(Hittable);
-                    const tex = try self.allocator.create(Texture);
+                    const mat = try arena_allocator.create(Material);
+                    const hittable = try arena_allocator.create(Hittable);
+                    const tex = try arena_allocator.create(Texture);
 
                     // texture
                     if (obj.tex_type == TextureType.checker) {
-                        const checker = try self.allocator.create(Checker);
-                        checker.* = try Checker.init_color(self.allocator, obj.tex_checker_scale, obj.tex_color, obj.tex_color2);
+                        const checker = try arena_allocator.create(Checker);
+                        checker.* = try Checker.init_color(arena_allocator, obj.tex_checker_scale, obj.tex_color, obj.tex_color2);
                         tex.* = checker.texture();
                     } else if (obj.tex_type == TextureType.noise) {
-                        const noise = try self.allocator.create(Noise);
+                        const noise = try arena_allocator.create(Noise);
                         noise.* = Noise.init(obj.tex_noise_scale);
                         tex.* = noise.texture();
                     } else if (obj.tex_type == TextureType.image) {
-                        const tex_img = try self.allocator.create(Image);
-                        tex_img.* = try Image.init(self.allocator, obj.tex_image_path);
+                        const tex_img = try arena_allocator.create(Image);
+                        tex_img.* = try Image.init(arena_allocator, obj.tex_image_path);
                         tex.* = tex_img.texture();
                     }
 
                     // material
                     if (obj.mat_type == MaterialType.lambertian) {
-                        const lamb = try self.allocator.create(Lambertian);
+                        const lamb = try arena_allocator.create(Lambertian);
                         if (obj.tex_type != TextureType.none) {
                             lamb.* = Lambertian.init_texture(tex.*);
                         } else {
-                            lamb.* = try Lambertian.init(self.allocator, obj.mat_color);
+                            lamb.* = try Lambertian.init(arena_allocator, obj.mat_color);
                         }
                         mat.* = lamb.mat();
                     } else if (obj.mat_type == MaterialType.metal) {
-                        const metal = try self.allocator.create(Metal);
+                        const metal = try arena_allocator.create(Metal);
                         metal.* = Metal.init(obj.mat_color, obj.mat_fuzz);
                         mat.* = metal.mat();
                     } else if (obj.mat_type == MaterialType.dielectric) {
-                        const dielectric = try self.allocator.create(Dielectric);
+                        const dielectric = try arena_allocator.create(Dielectric);
                         dielectric.* = Dielectric{ .refractionIndex = obj.mat_refraction };
                         mat.* = dielectric.mat();
                     } else if (obj.mat_type == MaterialType.diffuse_light) {
-                        const difflight = try self.allocator.create(DiffuseLight);
+                        const difflight = try arena_allocator.create(DiffuseLight);
                         if (obj.tex_type != TextureType.none) {
                             difflight.* = DiffuseLight.init_tex(tex.*);
                         } else {
                             const color = obj.mat_color * @as(Vec3, @splat(obj.mat_diff_light_intensity));
-                            difflight.* = try DiffuseLight.init_color(self.allocator, color);
+                            difflight.* = try DiffuseLight.init_color(arena_allocator, color);
                         }
                         mat.* = difflight.mat();
                     }
 
                     // object
                     if (obj.obj_type == ObjectType.sphere) {
-                        const sphere = try self.allocator.create(Sphere);
+                        const sphere = try arena_allocator.create(Sphere);
                         if (obj.obj_moving) {
                             sphere.* = Sphere.init_moving(obj.obj_pos, obj.obj_pos2, obj.obj_radius, mat.*);
                         } else {
                             sphere.* = Sphere.init(obj.obj_pos, obj.obj_radius, mat.*);
                         }
                         if (obj.obj_const_medium) {
-                            const const_med = try self.allocator.create(ConstantMedium);
-                            const_med.* = try ConstantMedium.init_color(self.allocator, sphere.hittable(), obj.obj_const_medium_density, obj.obj_const_medium_color);
+                            const const_med = try arena_allocator.create(ConstantMedium);
+                            const_med.* = try ConstantMedium.init_color(arena_allocator, sphere.hittable(), obj.obj_const_medium_density, obj.obj_const_medium_color);
                             try self.render_opts.world.add(const_med.hittable());
                         }
                         hittable.* = sphere.hittable();
                     } else if (obj.obj_type == ObjectType.plane) {
-                        const quad = try self.allocator.create(Quad);
+                        const quad = try arena_allocator.create(Quad);
                         quad.* = Quad.init(obj.obj_pos, obj.obj_pos2, obj.obj_pos3, mat.*);
                         hittable.* = quad.hittable();
                     } else if (obj.obj_type == ObjectType.cube) {
-                        const box = try self.allocator.create(Box);
+                        const box = try arena_allocator.create(Box);
                         const center: Point3 = obj.obj_pos;
                         const a: Point3 = center - Vec3{ obj.obj_pos2[0] / 2, obj.obj_pos2[1] / 2, obj.obj_pos2[2] / 2 };
                         const b: Point3 = center + Vec3{ obj.obj_pos2[0] / 2, obj.obj_pos2[1] / 2, obj.obj_pos2[2] / 2 };
                         box.* = Box.init(a, b, mat.*);
                         if (obj.obj_const_medium) {
-                            const const_med = try self.allocator.create(ConstantMedium);
-                            const_med.* = try ConstantMedium.init_color(self.allocator, box.hittable(), obj.obj_const_medium_density, obj.obj_const_medium_color);
+                            const const_med = try arena_allocator.create(ConstantMedium);
+                            const_med.* = try ConstantMedium.init_color(arena_allocator, box.hittable(), obj.obj_const_medium_density, obj.obj_const_medium_color);
                             try self.render_opts.world.add(const_med.hittable());
                         }
                         hittable.* = box.hittable();
                     }
 
                     if (obj.obj_rot[1] != 0) {
-                        const rotated = try self.allocator.create(RotateY);
+                        const rotated = try arena_allocator.create(RotateY);
                         rotated.* = RotateY.init(hittable.*, obj.obj_rot[1]);
                         hittable.* = rotated.hittable();
                     }
