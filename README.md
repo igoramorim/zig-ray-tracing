@@ -16,8 +16,9 @@ Run
 ![](/images/editor.png)
 
 ## TODO
-- [] Add another type of light
-- [] Cast shadows
-- [] Rotation in X and Z
-- [] Export render as image
-- [] Load .obj models
+- Add another type of light
+- Cast shadows
+- Rotation in X and Z
+- Export render as image
+- Load .obj models
+- Add tile size in editor
