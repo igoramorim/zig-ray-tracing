@@ -39,11 +39,9 @@ pub const Camera = struct {
     defocus_disk_v: Vec3 = undefined, // defocus disk vertical radius
     background_color: Color = Color{ 0.70, 0.80, 1.0 },
 
-    pub fn render(self: *Camera, allocator: std.mem.Allocator, world: Hittable, state: *State) !void {
+    pub fn render(self: *Camera, world: Hittable, state: *State) !void {
         self.initialize();
-
-        // try render_by_line(allocator, self, world, state);
-        try render_by_tile(allocator, self, world, state);
+        try render_by_tile(self, world, state);
     }
 
     fn initialize(self: *Camera) void {
@@ -205,11 +203,7 @@ fn render_line(task: RenderLineTask) void {
     task.state.progress = @intCast(((lines_done * 100) / task.camera.image_height));
 }
 
-fn render_by_tile(allocator: std.mem.Allocator, camera: *Camera, world: Hittable, state: *State) !void {
-    var pool: std.Thread.Pool = undefined;
-    try pool.init(.{ .allocator = allocator });
-    defer pool.deinit();
-
+fn render_by_tile(camera: *Camera, world: Hittable, state: *State) !void {
     var wg = std.Thread.WaitGroup{};
 
     const tile_size: u8 = 16;
@@ -222,7 +216,9 @@ fn render_by_tile(allocator: std.mem.Allocator, camera: *Camera, world: Hittable
     while (j < tiles_y) : (j = j + 1) {
         var i: u32 = 0;
         while (i < tiles_x) : (i = i + 1) {
-            pool.spawnWg(&wg, render_tile, .{RenderTileTask{
+            if (state.cancel_render.load(.acquire)) return;
+
+            state.pool.spawnWg(&wg, render_tile, .{RenderTileTask{
                 .camera = camera,
                 .world = world,
                 .x_start = i * tile_size,
@@ -236,7 +232,7 @@ fn render_by_tile(allocator: std.mem.Allocator, camera: *Camera, world: Hittable
         }
     }
 
-    pool.waitAndWork(&wg);
+    state.pool.waitAndWork(&wg);
 }
 
 const RenderTileTask = struct {
@@ -252,12 +248,10 @@ const RenderTileTask = struct {
 };
 
 fn render_tile(task: RenderTileTask) void {
-    if (task.state.cancel_render.load(.monotonic)) {
-        return;
-    }
-
     var j: u32 = task.y_start;
     while (j < task.y_end) : (j = j + 1) {
+        if (task.state.cancel_render.load(.acquire)) return;
+
         var i: u32 = task.x_start;
         while (i < task.x_end) : (i = i + 1) {
             var pixel_color = Color{ 0.0, 0.0, 0.0 };

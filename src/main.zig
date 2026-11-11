@@ -90,7 +90,7 @@ pub fn main() !void {
     defer {
         // make sure to cancel the render if the app is closed while rendering
         if (render_thread) |thread| {
-            state.cancel_render.store(true, .monotonic);
+            state.cancel_render.store(true, .release);
             thread.join();
         }
     }
@@ -128,7 +128,7 @@ pub fn main() !void {
 
         const fb_size = window.getFramebufferSize();
         if (try editor.render(@intCast(fb_size[0]), @intCast(fb_size[1]))) {
-            state.cancel_render.store(true, .monotonic); // cancels the current render
+            state.cancel_render.store(true, .release); // cancels the current render
 
             if (render_thread) |thread| { // wait the thread finishes
                 thread.join();
@@ -136,14 +136,14 @@ pub fn main() !void {
             }
 
             @memset(state.buffer, 0); // clear the buffer
-            state.cancel_render.store(false, .monotonic); // reset the cancel flag
+            state.cancel_render.store(false, .release); // reset the cancel flag
 
             // start a new render
             state.progress = 0;
             render_thread = try std.Thread.spawn(
                 .{},
                 scene_runner,
-                .{ allocator, editor.render_opts, &state },
+                .{ editor.render_opts, state },
             );
         }
 
@@ -154,26 +154,35 @@ pub fn main() !void {
 pub const State = struct {
     allocator: std.mem.Allocator,
     buffer: []u8,
+    pool: std.Thread.Pool = undefined,
     cancel_render: std.atomic.Value(bool),
     progress: u8 = 0,
 
-    pub fn init(allocator: std.mem.Allocator, total_pixels: usize) !State {
+    pub fn init(allocator: std.mem.Allocator, total_pixels: usize) !*State {
+        var self = try allocator.create(State);
+
         const buffer = try allocator.alloc(u8, total_pixels);
         @memset(buffer, 0); // clear the buffer
 
-        return .{
-            .allocator = allocator,
-            .buffer = buffer,
-            .cancel_render = std.atomic.Value(bool).init(false),
-        };
+        self.allocator = allocator;
+        self.buffer = buffer;
+        self.pool = undefined;
+        self.cancel_render = std.atomic.Value(bool).init(false);
+        self.progress = 0;
+
+        try self.pool.init(.{ .allocator = allocator });
+
+        return self;
     }
 
     pub fn deinit(self: *State) void {
         self.allocator.free(self.buffer);
+        self.pool.deinit();
+        self.allocator.destroy(self);
     }
 };
 
-fn scene_runner(allocator: std.mem.Allocator, opts: Opts, state: *State) anyerror!void {
+fn scene_runner(opts: Opts, state: *State) anyerror!void {
     var cam = Camera{};
     cam.aspect_radio = 16.0 / 9.0;
     cam.image_width = opts.width;
@@ -186,5 +195,5 @@ fn scene_runner(allocator: std.mem.Allocator, opts: Opts, state: *State) anyerro
     cam.defocus_angle = opts.defocus_angle;
     cam.focus_dist = opts.focus_dist;
     cam.background_color = opts.background_color;
-    try cam.render(allocator, opts.world.hittable(), state);
+    try cam.render(opts.world.hittable(), state);
 }

@@ -21,4 +21,3 @@ Run
 - [] Rotation in X and Z
 - [] Export render as image
 - [] Load .obj models
-- [] Live render (remove the Render button)

@@ -26,7 +26,7 @@ const zgui = @import("zgui");
 
 const default_background_color = [3]f32{ 0.70, 0.80, 1.0 };
 
-const default_samples_per_pixel = 30;
+const default_samples_per_pixel = 10;
 const min_samples_per_pixel = 1;
 const max_samples_per_pixel = 10_000;
 var samples_per_pixel: i32 = default_samples_per_pixel;
@@ -195,6 +195,10 @@ pub const Editor = struct {
     obj_opts: ObjOpts,
     objects: std.ArrayList(ObjOpts),
 
+    last_input_time: i128 = 0,
+    delay_ns: i128 = 250 * std.time.ns_per_ms,
+    has_pending_change: bool = false,
+
     pub fn init(allocator: std.mem.Allocator, canvas_width: u32, render_progress: *u8) Editor {
         return .{
             .allocator = allocator,
@@ -228,6 +232,7 @@ pub const Editor = struct {
                 .max = max_samples_per_pixel,
             })) {
                 self.render_opts.samples_per_pixel = @intCast(samples_per_pixel);
+                self.mark_input_changed();
             }
 
             if (zgui.sliderInt("Max depth", .{
@@ -236,6 +241,7 @@ pub const Editor = struct {
                 .max = max_max_depth,
             })) {
                 self.render_opts.max_depth = @intCast(max_depth);
+                self.mark_input_changed();
             }
 
             if (zgui.sliderFloat("FOV", .{
@@ -244,6 +250,7 @@ pub const Editor = struct {
                 .max = max_fov,
             })) {
                 self.render_opts.fov = @floatCast(fov);
+                self.mark_input_changed();
             }
 
             if (zgui.sliderFloat("Defocus Angle", .{
@@ -252,6 +259,7 @@ pub const Editor = struct {
                 .max = max_defocus_angle,
             })) {
                 self.render_opts.defocus_angle = @floatCast(defocus_angle);
+                self.mark_input_changed();
             }
 
             if (zgui.sliderFloat("Focus Distance", .{
@@ -260,6 +268,7 @@ pub const Editor = struct {
                 .max = max_focus_dist,
             })) {
                 self.render_opts.focus_dist = @floatCast(focus_dist);
+                self.mark_input_changed();
             }
 
             if (zgui.sliderFloat3("Look From", .{
@@ -268,6 +277,7 @@ pub const Editor = struct {
                 .max = max_look_from,
             })) {
                 self.render_opts.look_from = look_from;
+                self.mark_input_changed();
             }
 
             if (zgui.sliderFloat3("Look At", .{
@@ -276,114 +286,16 @@ pub const Editor = struct {
                 .max = max_look_at,
             })) {
                 self.render_opts.look_at = look_at;
+                self.mark_input_changed();
             }
 
             if (zgui.colorEdit3("Background Color", .{
                 .col = &self.render_opts.background_color,
-            })) {}
+            })) {
+                self.mark_input_changed();
+            }
 
             zgui.separator();
-
-            if (zgui.button("Render", .{})) {
-                if (self.render_arena) |*arena| {
-                    arena.deinit();
-                }
-
-                self.render_arena = std.heap.ArenaAllocator.init(self.allocator);
-                const arena_allocator = self.render_arena.?.allocator();
-                self.render_opts.world = HittableList.init(arena_allocator);
-
-                for (self.objects.items) |obj| {
-                    const mat = try arena_allocator.create(Material);
-                    const hittable = try arena_allocator.create(Hittable);
-                    const tex = try arena_allocator.create(Texture);
-
-                    // texture
-                    if (obj.tex_type == TextureType.checker) {
-                        const checker = try arena_allocator.create(Checker);
-                        checker.* = try Checker.init_color(arena_allocator, obj.tex_checker_scale, obj.tex_color, obj.tex_color2);
-                        tex.* = checker.texture();
-                    } else if (obj.tex_type == TextureType.noise) {
-                        const noise = try arena_allocator.create(Noise);
-                        noise.* = Noise.init(obj.tex_noise_scale);
-                        tex.* = noise.texture();
-                    } else if (obj.tex_type == TextureType.image) {
-                        const tex_img = try arena_allocator.create(Image);
-                        tex_img.* = try Image.init(arena_allocator, obj.tex_image_path);
-                        tex.* = tex_img.texture();
-                    }
-
-                    // material
-                    if (obj.mat_type == MaterialType.lambertian) {
-                        const lamb = try arena_allocator.create(Lambertian);
-                        if (obj.tex_type != TextureType.none) {
-                            lamb.* = Lambertian.init_texture(tex.*);
-                        } else {
-                            lamb.* = try Lambertian.init(arena_allocator, obj.mat_color);
-                        }
-                        mat.* = lamb.mat();
-                    } else if (obj.mat_type == MaterialType.metal) {
-                        const metal = try arena_allocator.create(Metal);
-                        metal.* = Metal.init(obj.mat_color, obj.mat_fuzz);
-                        mat.* = metal.mat();
-                    } else if (obj.mat_type == MaterialType.dielectric) {
-                        const dielectric = try arena_allocator.create(Dielectric);
-                        dielectric.* = Dielectric{ .refractionIndex = obj.mat_refraction };
-                        mat.* = dielectric.mat();
-                    } else if (obj.mat_type == MaterialType.diffuse_light) {
-                        const difflight = try arena_allocator.create(DiffuseLight);
-                        if (obj.tex_type != TextureType.none) {
-                            difflight.* = DiffuseLight.init_tex(tex.*);
-                        } else {
-                            const color = obj.mat_color * @as(Vec3, @splat(obj.mat_diff_light_intensity));
-                            difflight.* = try DiffuseLight.init_color(arena_allocator, color);
-                        }
-                        mat.* = difflight.mat();
-                    }
-
-                    // object
-                    if (obj.obj_type == ObjectType.sphere) {
-                        const sphere = try arena_allocator.create(Sphere);
-                        if (obj.obj_moving) {
-                            sphere.* = Sphere.init_moving(obj.obj_pos, obj.obj_pos2, obj.obj_radius, mat.*);
-                        } else {
-                            sphere.* = Sphere.init(obj.obj_pos, obj.obj_radius, mat.*);
-                        }
-                        if (obj.obj_const_medium) {
-                            const const_med = try arena_allocator.create(ConstantMedium);
-                            const_med.* = try ConstantMedium.init_color(arena_allocator, sphere.hittable(), obj.obj_const_medium_density, obj.obj_const_medium_color);
-                            try self.render_opts.world.add(const_med.hittable());
-                        }
-                        hittable.* = sphere.hittable();
-                    } else if (obj.obj_type == ObjectType.plane) {
-                        const quad = try arena_allocator.create(Quad);
-                        quad.* = Quad.init(obj.obj_pos, obj.obj_pos2, obj.obj_pos3, mat.*);
-                        hittable.* = quad.hittable();
-                    } else if (obj.obj_type == ObjectType.cube) {
-                        const box = try arena_allocator.create(Box);
-                        const center: Point3 = obj.obj_pos;
-                        const a: Point3 = center - Vec3{ obj.obj_pos2[0] / 2, obj.obj_pos2[1] / 2, obj.obj_pos2[2] / 2 };
-                        const b: Point3 = center + Vec3{ obj.obj_pos2[0] / 2, obj.obj_pos2[1] / 2, obj.obj_pos2[2] / 2 };
-                        box.* = Box.init(a, b, mat.*);
-                        if (obj.obj_const_medium) {
-                            const const_med = try arena_allocator.create(ConstantMedium);
-                            const_med.* = try ConstantMedium.init_color(arena_allocator, box.hittable(), obj.obj_const_medium_density, obj.obj_const_medium_color);
-                            try self.render_opts.world.add(const_med.hittable());
-                        }
-                        hittable.* = box.hittable();
-                    }
-
-                    if (obj.obj_rot[1] != 0) {
-                        const rotated = try arena_allocator.create(RotateY);
-                        rotated.* = RotateY.init(hittable.*, obj.obj_rot[1]);
-                        hittable.* = rotated.hittable();
-                    }
-
-                    try self.render_opts.world.add(hittable.*);
-                }
-
-                return true;
-            }
 
             zgui.text("{d}%", .{self.render_progress.*});
         }
@@ -618,6 +530,8 @@ pub const Editor = struct {
                     self.obj_opts.tex_type = if (texture_selected) |tex| @enumFromInt(tex) else TextureType.none;
 
                     try self.objects.append(self.obj_opts);
+                    try self.build_world();
+                    return true;
                 }
             }
         }
@@ -627,72 +541,93 @@ pub const Editor = struct {
 
             for (self.objects.items, 0..) |*obj, i| {
                 zgui.pushIntId(@intCast(i));
+                defer zgui.popId();
 
                 // object
                 if (obj.obj_type == ObjectType.sphere) {
                     zgui.text("Sphere #{d}", .{i});
                     if (zgui.checkbox("Moving", .{
                         .v = &obj.obj_moving,
-                    })) {}
+                    })) {
+                        self.mark_input_changed();
+                    }
 
                     if (zgui.sliderFloat3("Position (center)", .{
                         .v = &obj.obj_pos,
                         .min = min_obj_pos,
                         .max = max_obj_pos,
-                    })) {}
+                    })) {
+                        self.mark_input_changed();
+                    }
 
                     if (obj.obj_moving) {
                         if (zgui.sliderFloat3("Position 2", .{
                             .v = &obj.obj_pos2,
                             .min = min_obj_pos,
                             .max = max_obj_pos,
-                        })) {}
+                        })) {
+                            self.mark_input_changed();
+                        }
                     }
 
                     if (zgui.sliderFloat("Radius", .{
                         .v = &obj.obj_radius,
                         .min = min_obj_radius,
                         .max = max_obj_radius,
-                    })) {}
+                    })) {
+                        self.mark_input_changed();
+                    }
                 } else if (obj.obj_type == ObjectType.plane) {
                     zgui.text("Plane #{d}", .{i});
                     if (zgui.sliderFloat3("Left Bottom Corner", .{
                         .v = &obj.obj_pos,
                         .min = min_obj_pos,
                         .max = max_obj_pos,
-                    })) {}
+                    })) {
+                        self.mark_input_changed();
+                    }
 
                     if (zgui.sliderFloat3("U", .{
                         .v = &obj.obj_pos2,
                         .min = min_obj_pos,
                         .max = max_obj_pos,
-                    })) {}
+                    })) {
+                        self.mark_input_changed();
+                    }
 
                     if (zgui.sliderFloat3("V", .{
                         .v = &obj.obj_pos3,
                         .min = min_obj_pos,
                         .max = max_obj_pos,
-                    })) {}
+                    })) {
+                        self.mark_input_changed();
+                    }
                 } else if (obj.obj_type == ObjectType.cube) {
                     zgui.text("Cube #{d}", .{i});
                     if (zgui.sliderFloat3("Position (center)", .{
                         .v = &obj.obj_pos,
                         .min = min_obj_pos,
                         .max = max_obj_pos,
-                    })) {}
+                    })) {
+                        self.mark_input_changed();
+                    }
 
                     if (zgui.sliderFloat3("Size (x, y, z)", .{
                         .v = &obj.obj_pos2,
                         .min = min_obj_pos,
                         .max = max_obj_pos,
-                    })) {}
+                    })) {
+                        self.mark_input_changed();
+                    }
                 }
 
                 if (zgui.sliderFloat3("Rotation", .{
                     .v = &obj.obj_rot,
                     .min = min_obj_rot,
                     .max = max_obj_rot,
-                })) {}
+                })) {
+                    self.mark_input_changed();
+                }
 
                 // material
                 zgui.text("Material", .{});
@@ -700,34 +635,46 @@ pub const Editor = struct {
                     if (texture_selected == null) {
                         if (zgui.colorEdit3("Color##mat_color", .{
                             .col = &obj.mat_color,
-                        })) {}
+                        })) {
+                            self.mark_input_changed();
+                        }
                     }
                 } else if (obj.mat_type == MaterialType.metal) {
                     if (zgui.colorEdit3("Color##mat_color", .{
                         .col = &obj.mat_color,
-                    })) {}
+                    })) {
+                        self.mark_input_changed();
+                    }
 
                     if (zgui.sliderFloat("Fuzz", .{
                         .v = &obj.mat_fuzz,
                         .min = min_mat_fuzz,
                         .max = max_mat_fuzz,
-                    })) {}
+                    })) {
+                        self.mark_input_changed();
+                    }
                 } else if (obj.mat_type == MaterialType.dielectric) {
                     if (zgui.sliderFloat("Refraction", .{
                         .v = &obj.mat_refraction,
                         .min = min_mat_refraction,
                         .max = max_mat_refraction,
-                    })) {}
+                    })) {
+                        self.mark_input_changed();
+                    }
                 } else if (obj.mat_type == MaterialType.diffuse_light) {
                     if (zgui.colorEdit3("Color##mat_color", .{
                         .col = &obj.mat_color,
-                    })) {}
+                    })) {
+                        self.mark_input_changed();
+                    }
 
                     if (zgui.sliderFloat("Intensity", .{
                         .v = &obj.mat_diff_light_intensity,
                         .min = min_mat_diff_light_intensity,
                         .max = max_mat_diff_light_intensity,
-                    })) {}
+                    })) {
+                        self.mark_input_changed();
+                    }
                 }
 
                 // texture
@@ -736,23 +683,31 @@ pub const Editor = struct {
                     if (obj.tex_type == TextureType.checker) {
                         if (zgui.colorEdit3("Color 1", .{
                             .col = &obj.tex_color,
-                        })) {}
+                        })) {
+                            self.mark_input_changed();
+                        }
 
                         if (zgui.colorEdit3("Color 2", .{
                             .col = &obj.tex_color2,
-                        })) {}
+                        })) {
+                            self.mark_input_changed();
+                        }
 
                         if (zgui.sliderFloat("Scale", .{
                             .v = &obj.tex_checker_scale,
                             .min = min_tex_checker_scale,
                             .max = max_tex_checker_scale,
-                        })) {}
+                        })) {
+                            self.mark_input_changed();
+                        }
                     } else if (obj.tex_type == TextureType.noise) {
                         if (zgui.sliderFloat("Scale", .{
                             .v = &obj.tex_noise_scale,
                             .min = min_tex_noise_scale,
                             .max = max_tex_noise_scale,
-                        })) {}
+                        })) {
+                            self.mark_input_changed();
+                        }
                     } else if (obj.tex_type == TextureType.image) {
                         if (zgui.beginCombo("Image", .{ .preview_value = obj.tex_image_path })) {
                             defer zgui.endCombo();
@@ -761,6 +716,7 @@ pub const Editor = struct {
                                 const is_selected = (std.mem.eql(u8, obj.tex_image_path, label));
                                 if (zgui.selectable(label, .{ .selected = is_selected })) {
                                     obj.tex_image_path = label;
+                                    self.mark_input_changed();
                                 }
                             }
                         }
@@ -771,30 +727,159 @@ pub const Editor = struct {
                     zgui.text("Constant Medium", .{});
                     if (zgui.colorEdit3("Color##const_med_color", .{
                         .col = &obj.obj_const_medium_color,
-                    })) {}
+                    })) {
+                        self.mark_input_changed();
+                    }
 
                     if (zgui.sliderFloat("Density", .{
                         .v = &obj.obj_const_medium_density,
                         .min = min_obj_const_medium_density,
                         .max = max_obj_const_medium_density,
-                    })) {}
+                    })) {
+                        self.mark_input_changed();
+                    }
                 }
 
                 if (zgui.button("Delete", .{})) {
                     _ = self.objects.orderedRemove(i);
+                    try self.build_world();
+                    return true;
                 }
                 zgui.separator();
-
-                zgui.popId();
             }
 
             if (self.objects.items.len > 0) {
                 if (zgui.button("Clear All", .{})) {
                     self.objects.clearAndFree();
+                    try self.build_world();
+                    return true;
                 }
             }
         }
 
+        if (self.input_stopped()) {
+            try self.build_world();
+            return true;
+        }
+
         return false;
+    }
+
+    fn build_world(self: *Editor) !void {
+        if (self.render_arena) |*arena| {
+            arena.deinit();
+        }
+
+        self.render_arena = std.heap.ArenaAllocator.init(self.allocator);
+        const arena_allocator = self.render_arena.?.allocator();
+        self.render_opts.world = HittableList.init(arena_allocator);
+
+        for (self.objects.items) |obj| {
+            const mat = try arena_allocator.create(Material);
+            const hittable = try arena_allocator.create(Hittable);
+            const tex = try arena_allocator.create(Texture);
+
+            // texture
+            if (obj.tex_type == TextureType.checker) {
+                const checker = try arena_allocator.create(Checker);
+                checker.* = try Checker.init_color(arena_allocator, obj.tex_checker_scale, obj.tex_color, obj.tex_color2);
+                tex.* = checker.texture();
+            } else if (obj.tex_type == TextureType.noise) {
+                const noise = try arena_allocator.create(Noise);
+                noise.* = Noise.init(obj.tex_noise_scale);
+                tex.* = noise.texture();
+            } else if (obj.tex_type == TextureType.image) {
+                const tex_img = try arena_allocator.create(Image);
+                tex_img.* = try Image.init(arena_allocator, obj.tex_image_path);
+                tex.* = tex_img.texture();
+            }
+
+            // material
+            if (obj.mat_type == MaterialType.lambertian) {
+                const lamb = try arena_allocator.create(Lambertian);
+                if (obj.tex_type != TextureType.none) {
+                    lamb.* = Lambertian.init_texture(tex.*);
+                } else {
+                    lamb.* = try Lambertian.init(arena_allocator, obj.mat_color);
+                }
+                mat.* = lamb.mat();
+            } else if (obj.mat_type == MaterialType.metal) {
+                const metal = try arena_allocator.create(Metal);
+                metal.* = Metal.init(obj.mat_color, obj.mat_fuzz);
+                mat.* = metal.mat();
+            } else if (obj.mat_type == MaterialType.dielectric) {
+                const dielectric = try arena_allocator.create(Dielectric);
+                dielectric.* = Dielectric{ .refractionIndex = obj.mat_refraction };
+                mat.* = dielectric.mat();
+            } else if (obj.mat_type == MaterialType.diffuse_light) {
+                const difflight = try arena_allocator.create(DiffuseLight);
+                if (obj.tex_type != TextureType.none) {
+                    difflight.* = DiffuseLight.init_tex(tex.*);
+                } else {
+                    const color = obj.mat_color * @as(Vec3, @splat(obj.mat_diff_light_intensity));
+                    difflight.* = try DiffuseLight.init_color(arena_allocator, color);
+                }
+                mat.* = difflight.mat();
+            }
+
+            // object
+            if (obj.obj_type == ObjectType.sphere) {
+                const sphere = try arena_allocator.create(Sphere);
+                if (obj.obj_moving) {
+                    sphere.* = Sphere.init_moving(obj.obj_pos, obj.obj_pos2, obj.obj_radius, mat.*);
+                } else {
+                    sphere.* = Sphere.init(obj.obj_pos, obj.obj_radius, mat.*);
+                }
+                if (obj.obj_const_medium) {
+                    const const_med = try arena_allocator.create(ConstantMedium);
+                    const_med.* = try ConstantMedium.init_color(arena_allocator, sphere.hittable(), obj.obj_const_medium_density, obj.obj_const_medium_color);
+                    try self.render_opts.world.add(const_med.hittable());
+                }
+                hittable.* = sphere.hittable();
+            } else if (obj.obj_type == ObjectType.plane) {
+                const quad = try arena_allocator.create(Quad);
+                quad.* = Quad.init(obj.obj_pos, obj.obj_pos2, obj.obj_pos3, mat.*);
+                hittable.* = quad.hittable();
+            } else if (obj.obj_type == ObjectType.cube) {
+                const box = try arena_allocator.create(Box);
+                const center: Point3 = obj.obj_pos;
+                const a: Point3 = center - Vec3{ obj.obj_pos2[0] / 2, obj.obj_pos2[1] / 2, obj.obj_pos2[2] / 2 };
+                const b: Point3 = center + Vec3{ obj.obj_pos2[0] / 2, obj.obj_pos2[1] / 2, obj.obj_pos2[2] / 2 };
+                box.* = Box.init(a, b, mat.*);
+                if (obj.obj_const_medium) {
+                    const const_med = try arena_allocator.create(ConstantMedium);
+                    const_med.* = try ConstantMedium.init_color(arena_allocator, box.hittable(), obj.obj_const_medium_density, obj.obj_const_medium_color);
+                    try self.render_opts.world.add(const_med.hittable());
+                }
+                hittable.* = box.hittable();
+            }
+
+            if (obj.obj_rot[1] != 0) {
+                const rotated = try arena_allocator.create(RotateY);
+                rotated.* = RotateY.init(hittable.*, obj.obj_rot[1]);
+                hittable.* = rotated.hittable();
+            }
+
+            try self.render_opts.world.add(hittable.*);
+        }
+    }
+
+    fn mark_input_changed(self: *Editor) void {
+        self.last_input_time = std.time.nanoTimestamp();
+        self.has_pending_change = true;
+    }
+
+    fn input_stopped(self: *Editor) bool {
+        if (!self.has_pending_change) return false;
+
+        const current_time = std.time.nanoTimestamp();
+        const elapsed = current_time - self.last_input_time;
+
+        if (elapsed >= self.delay_ns) {
+            self.has_pending_change = false;
+            return true;
+        } else {
+            return false;
+        }
     }
 };
